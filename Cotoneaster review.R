@@ -1,5 +1,6 @@
 rm(list = ls())
-setwd("~/Universiteit werk/Masters/Cotoneaster review")
+#setwd("~/Universiteit werk/Masters/Cotoneaster review")
+setwd("~/Cotoneaster_review")
 library(tidyverse)
 library(sf)
 library(rWCVP)
@@ -246,6 +247,7 @@ final_spreadsheet<-
 
 write.csv(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
 write.csv(st_drop_geometry(gbif_final),"Final gbif records.csv")
+write.csv(translation_table,"translation_table.csv")
 
 
 
