@@ -2,12 +2,14 @@ rm(list = ls())
 #setwd("~/Universiteit werk/Masters/Cotoneaster review")
 setwd("~/Cotoneaster_review")
 library(tidyverse)
+library(readr)
 library(sf)
 library(rWCVP)
 #install.packages("rWCVPdata", repos=c("https://matildabrown.github.io/drat", "https://cloud.r-project.org"))
 library(rWCVPdata)
 library(CoordinateCleaner)
 library(conflicted)
+library(tictoc)
 
 conflict_scout()
 conflicts_prefer(dplyr::filter,
@@ -29,8 +31,10 @@ ggplot(country_shapefiles)+
 
 ## Load data from gbif and GloNAF #########################################################
 
-gbif<-read.csv2("0013728-241107131044228.csv")#%>%
-  #sample_n(10000)
+
+
+
+gbif <- read_delim("0006576-241126133413365.csv", delim = "\t", escape_double = FALSE,trim_ws = TRUE)
 
 GloNAF_taxon_x_region<-
   read.csv2("257_9_257_2_GLONAF/GLONAF/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.csv")
@@ -89,20 +93,39 @@ multi_correct<-function (df){
 
 str(gbif)
 
+
 # WARNING: this function can take a while to run
+tic()
 gbif_clean<-
   gbif%>%
   filter(decimalLongitude != "" & !is.na(decimalLongitude),
          decimalLatitude != "" & !is.na(decimalLatitude))%>%
   mutate(decimalLongitude = as.numeric(decimalLongitude),
          decimalLatitude = as.numeric(decimalLatitude))%>%
-  clean_coordinates(tests = c("capitals","centroids","equal","gbif",
-                              "institutions","zeros"),
-                    capitals_rad = 1000)
-gbif_clean2<-
-  gbif_clean%>%
-  filter(.summary == TRUE)%>%
-  select(-.val,-.equ,-.zer,-.cap,-.cen,-.gbf,-.inst,-.summary)#%>%view()
+  cc_val()%>%
+  cc_aohi()%>%
+  cc_cen()%>%
+  cc_dupl()%>%
+  cc_equ()%>%
+  cc_inst()%>%
+  cc_zero()
+toc()
+
+gbif%>%
+  filter(! gbifID %in% gbif_clean$gbifID)
+
+# gbif%>%
+#   select(species,decimalLatitude,decimalLongitude)%>%
+#   unique()%>%
+#   ggplot(aes(decimalLongitude,decimalLatitude,colour = species))+
+#   geom_point()+
+#   theme(legend.position = "none")
+
+
+# gbif_clean2<-
+#   gbif_clean%>%
+#   filter(.summary == TRUE)%>%
+#   select(-.val,-.equ,-.zer,-.cap,-.cen,-.gbf,-.inst,-.summary)#%>%view()
 
 # Cleaned the coordinates, refer to citation for details
 citation("CoordinateCleaner")
@@ -121,7 +144,7 @@ gbif_list<-
   #filter(taxonRank == "SPECIES")%>%
   mutate(taxon = ifelse(taxonRank == "GENUS",genus,species))%>%
   group_by(taxon)%>%
-  summarise(num_recs = length(species))%>%view()
+  summarise(num_recs = length(species))#%>%view()
 
 GloNAF_list<-
 GloNAF_taxon_x_region%>%
@@ -131,7 +154,7 @@ GloNAF_taxon_x_region%>%
   summarise()%>%
   rename(taxon = standardized_name)#%>%view()
 
-translation_table<-
+matched_list<-
   full_join(gbif_list,GloNAF_list)%>%
   wcvp_match_names(.,
                    name_col="taxon",
@@ -139,10 +162,26 @@ translation_table<-
                    fuzzy=TRUE,
                    progress_bar=TRUE)%>%
   multi_correct()%>%
-  mutate(multi_correct = ifelse(multi_correct == "manual_check_needed" &wcvp_id == "2944452",
-                                "keeper_checked",multi_correct))%>%
+  mutate(multi_correct = ifelse(match_type == "Exact (without author)",multi_correct,"manual_check_needed"))
+
+
+# write.csv(matched_list,"matched_list.csv")
+# 
+# match_list_checked<-
+#   read.csv("matched_list_checked.csv")
+
+
+
+manually_checked_taxa
+  data.frame((problem_taxon = matched_list%>%filter(multi_correct == "manual_check_needed"))$taxon)#,
+             response = c(),
+             rationale = c())
+
+
+
+translation_table<-
+  matched_list_checked%>%
   filter(multi_correct == "keeper" | multi_correct == "keeper_checked")%>%
-  filter(!is.na(wcvp_accepted_id))%>%
   select(taxon,num_recs,wcvp_accepted_id)%>%
   rename(plant_name_id = wcvp_accepted_id)%>%
   left_join(wcvp_names%>%
@@ -154,6 +193,8 @@ translation_table<-
          species_stand = species,
          authors_stand = taxon_authors)
 
+
+# Checks that every entry in the translation table is unique
 length(unique(translation_table$taxon_stand)) == nrow(translation_table)
 
 ## Standardize nomenclature ####################################################
@@ -184,18 +225,14 @@ gbif_stand%>%
   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
   st_join(country_shapefiles)#%>%view()
 
-
+# This shows an example in Norway of some records not within the country boundaries, 
+# much of this is likely due to rounded coordinates 
 ggplot(gbif_stand_geo%>%filter(is.na(LEVEL3_NAM)))+
   geom_sf(data = country_shapefiles)+
   geom_sf()+
   coord_sf(xlim = c(5,10), ylim = c(60, 58), expand = FALSE)
 
-# gbif_stand_geo%>%
-#   mutate(tdwg3 = LEVEL3_COD)%>%
-#   left_join(GloNAF_contoneaster%>%
-#               select(tdwg3,status))%>%
-#   left_join(wcvp_distributions%>%
-#               select())
+
 
 
 gbif_stand_geo%>%filter(is.na(LEVEL3_NAM))%>%
@@ -245,9 +282,9 @@ final_spreadsheet<-
 
 ## Exporting ###################################################################
 
-write.csv(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
-write.csv(st_drop_geometry(gbif_final),"Final gbif records.csv")
-write.csv(translation_table,"translation_table.csv")
+# write.csv(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
+# write.csv(st_drop_geometry(gbif_final),"Final gbif records.csv")
+# write.csv(translation_table,"translation_table.csv")
 
 
 
@@ -482,3 +519,17 @@ view(r)
 #   mutate(abund = ifelse(is.na(abund),0,abund))%>%
 #   ggplot()+
 #   geom_sf(aes(fill = log(abund)))
+# gbif_stand_geo%>%
+#   mutate(tdwg3 = LEVEL3_COD)%>%
+#   left_join(GloNAF_contoneaster%>%
+#               select(tdwg3,status))%>%
+#   left_join(wcvp_distributions%>%
+#               select())
+# gbif<-read.csv2("0013728-241107131044228.csv")#%>%
+#   #sample_n(10000)
+# gbif_new<-
+#   read.csv2("0006576-241126133413365.csv",sep = "\t")
+# institutions<-CoordinateCleaner::institutions%>%view()
+# 
+# ggplot(data = institutions,aes(decimalLongitude,decimalLatitude))+
+#   geom_point()
