@@ -170,19 +170,10 @@ matched_list<-
                    progress_bar=TRUE)%>%
   multi_correct()%>%
   mutate(plant_name_id = wcvp_accepted_id)%>%
-  #left_join(wcvp_names%>%select(plant_name_id,taxon_name))%>%
   left_join(wcvp_names%>%
              select(genus,species,taxon_name, taxon_authors,plant_name_id))%>%
   select(-plant_name_id)%>%
-  rename(wcvp_accepted_name = taxon_name)#%>%
-  # mutate(multi_correct = ifelse(match_type == "Exact (without author)"|
-  #                               !startsWith(wcvp_accepted_name,"Cotoneaster"),
-  #                               multi_correct,"manual_check_needed"))
-
-#write.csv(matched_list,"matched_list.csv")
-
-# matched_list_checked<-
-#   read.csv2("matched_list_checked.csv")
+  rename(wcvp_accepted_name = taxon_name)
 
 
 matched_list_checked<-
@@ -309,9 +300,9 @@ final_spreadsheet<-
 
 ## Exporting ###################################################################
 
-# write.csv(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
-# write.csv(st_drop_geometry(gbif_final),"Final gbif records.csv")
-# write.csv(translation_table,"translation_table.csv")
+write.csv(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
+write.csv(st_drop_geometry(gbif_final),"Final gbif records.csv")
+write.csv(translation_table,"translation_table.csv")
 
 
 
