@@ -300,9 +300,9 @@ final_spreadsheet<-
 
 ## Exporting ###################################################################
 
-write.csv(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
-write.csv(st_drop_geometry(gbif_final),"Final gbif records.csv")
-write.csv(translation_table,"translation_table.csv")
+write.csv2(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
+write.csv2(st_drop_geometry(gbif_final),"Final gbif records.csv")
+write.csv2(translation_table,"translation_table.csv")
 
 
 
