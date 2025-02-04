@@ -11,7 +11,7 @@ library(CoordinateCleaner)
 library(conflicted)
 library(tictoc)
 library(patchwork)
-library(readxl)
+#library(readxl)
 
 conflict_scout()
 conflicts_prefer(dplyr::filter,
@@ -33,8 +33,6 @@ ggplot(country_shapefiles)+
 
 ## Load data from gbif and GloNAF #########################################################
 
-
-
 #gbif data
 gbif <- read_delim("0006576-241126133413365.csv", delim = "\t", escape_double = FALSE,trim_ws = TRUE)
 
@@ -43,27 +41,48 @@ gbif <- read_delim("0006576-241126133413365.csv", delim = "\t", escape_double = 
 GloNAF_taxon_x_region_orig<-
   read.csv2("257_9_257_2_GLONAF/GLONAF/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.csv")
 
-
-
-GloNAF_taxon_x_region<-
+glonaf_flora2<-
   read.csv2("GloNAF 2024/glonaf_flora2.csv")
 
-Glonaf_region<-
+glonaf_taxon<-
+  read.csv2("GloNAF 2024/glonaf_taxon_wcvp.csv")
+
+glonaf_region<-
   read.csv2("GloNAF 2024/glonaf_region.csv")
+
+GloNAF_taxon_x_region<-
+  left_join(glonaf_flora2,
+            glonaf_taxon%>%
+              select(id,accepted_plant_name_id,taxa_accepted)%>%
+              rename(taxon_wcvp_id = id))%>%
+  filter(startsWith(taxa_accepted,"Cotoneaster"))%>%
+  left_join(glonaf_region%>%
+              select(id,code,name,tdwg4_id)%>%
+              rename(region_id = id))%>%view()
+
+
+
+
 
 glonaf_TxR<-read.csv2("GloNAF 2024/glonaf_TxR.csv")
 
 glonaf_shapefiles<-
   read_sf("GloNAF 2024/glonaf_2024_nol/glonaf_2024_nol/glonaf_2024_nol.shp")
 
+glonaf_sp_list<-
+  read.csv2("GloNAF 2024/glonaf_taxon_wcvp.csv")
+
+glonaf_sp_list%>%
+  filter(startsWith(taxa_accepted,"Cotoneaster"))%>%
+  view()
 
 
 
 
-
-
-
-
+GloNAF_taxon_x_region%>%
+  rename(accepted_plant_name_id = taxon_wcvp_id,
+         id.txr = id)%>%
+  left_join(glonaf_sp_list)%>%view()
 
 # WCVP_native distributions 
 WCVP_native<-
@@ -71,7 +90,6 @@ WCVP_native<-
   filter(genus == "Cotoneaster")%>%
   left_join(wcvp_distributions)#%>%view()
 
-#GloNAF 2024 download ######
 
 
 
@@ -346,53 +364,6 @@ wcvp_distribution_map(r)
 view(r)
 
 
-## Playing around with GeoRange ################################################
-# 
-# a<-
-# gbif_clean%>%
-#   filter(species == "Cotoneaster franchetii")%>%
-#   mutate(decimalLongitude = as.numeric(decimalLongitude),
-#          decimalLatitude = as.numeric(decimalLatitude))%>%
-#   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326,remove = F)%>%
-#   sf_make_grid(cellsize = 10,what = "polygons")
-#   
-#     #view()
-#   
-#   
-#   grid <- st_make_grid(sf_data, cellsize = 0.01, what = "centers")  # Adjust cellsize
-# 
-# 
-#       
-# a%>%
-#   group_by(countryCode)%>%
-#   st_convex_hull()%>%
-#   plot()
-# 
-# 
-# a%>%
-#   mutate(cluster = kmeans(select(decimalLongitude,decimalLatitude),centers = 6)$cluster)%>%
-#   as.factor%>%view()
-# 
-# km_result<-kmeans(x = select(a,decimalLongitude,decimalLatitude),centers = 6)$cluster
-# 
-# 
-# a%>%
-#   mutate(cluster = kmeans(x = select(a,decimalLongitude,decimalLatitude),centers = 10)$cluster)%>%
-#   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326,remove = F)%>%
-#   group_by(cluster)%>%
-#   summarise(geometry = st_convex_hull(st_union(geometry)))%>%
-#   ggplot()+
-#   geom_sf()
-#     
-# PlotConvexHull(xcoord = as.numeric(a$decimalLongitude), ycoord = as.numeric(a$decimalLatitude))
-#     plot(    )
-#     
-#     CellCount(longs = as.numeric(a$decimalLongitude), lats = as.numeric(a$decimalLatitude), CellSize = 10,
-#               latBounds = c(-90, 90))%>%
-#       view()->b
-#     
-#       ggplot(b)+
-#       geom_point(aes(Coordinates.Longitude,Coordinates.Latitude))
 
 ## Code graveyard ########
 
