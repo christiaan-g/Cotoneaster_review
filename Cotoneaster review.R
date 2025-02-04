@@ -10,6 +10,8 @@ library(rWCVPdata)
 library(CoordinateCleaner)
 library(conflicted)
 library(tictoc)
+library(patchwork)
+library(readxl)
 
 conflict_scout()
 conflicts_prefer(dplyr::filter,
@@ -37,18 +39,42 @@ ggplot(country_shapefiles)+
 gbif <- read_delim("0006576-241126133413365.csv", delim = "\t", escape_double = FALSE,trim_ws = TRUE)
 
 #GloNAF taxon by region data
-GloNAF_taxon_x_region<-
+
+GloNAF_taxon_x_region_orig<-
   read.csv2("257_9_257_2_GLONAF/GLONAF/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.csv")
 
-#GloNAF region data
-GloNAF_regions<-
-  read.csv("257_9_257_2_GLONAF/GLONAF/Region_GloNAF_vanKleunenetal2018Ecology.csv")
+
+
+GloNAF_taxon_x_region<-
+  read.csv2("GloNAF 2024/glonaf_flora2.csv")
+
+Glonaf_region<-
+  read.csv2("GloNAF 2024/glonaf_region.csv")
+
+glonaf_TxR<-read.csv2("GloNAF 2024/glonaf_TxR.csv")
+
+glonaf_shapefiles<-
+  read_sf("GloNAF 2024/glonaf_2024_nol/glonaf_2024_nol/glonaf_2024_nol.shp")
+
+
+
+
+
+
+
+
+
 
 # WCVP_native distributions 
 WCVP_native<-
   wcvp_names%>%
   filter(genus == "Cotoneaster")%>%
   left_join(wcvp_distributions)#%>%view()
+
+#GloNAF 2024 download ######
+
+
+
 
 ## Define multi_correct function ###############################################
 
@@ -132,8 +158,12 @@ gbif_clean<-
   cc_zero()
 
 # Visualiszing all the removed records #####
+
 gbif%>%
   filter(! gbifID %in% gbif_clean$gbifID)%>%
+  ggplot(aes(decimalLongitude,decimalLatitude))+
+  geom_point()+
+gbif_clean%>%
   ggplot(aes(decimalLongitude,decimalLatitude))+
   geom_point()
 
@@ -151,18 +181,19 @@ gbif_list<-
   group_by(taxon)%>%
   summarise(num_recs = length(species))#%>%view()
 
-GloNAF_list<-
-GloNAF_taxon_x_region%>%
-  filter(startsWith(standardized_name, "Cotoneaster"))%>%
-  left_join(GloNAF_regions)%>%
-  group_by(standardized_name)%>%
-  summarise()%>%
-  rename(taxon = standardized_name)#%>%view()
+# GloNAF_list<-
+# GloNAF_taxon_x_region%>%
+#   filter(startsWith(standardized_name, "Cotoneaster"))%>%
+#   left_join(GloNAF_regions)%>%
+#   group_by(standardized_name)%>%
+#   summarise()%>%
+#   rename(taxon = standardized_name)#%>%view()
 
 
 # Note: this block takes about a minute to run
 matched_list<-
-  full_join(gbif_list,GloNAF_list)%>%
+  #full_join(gbif_list,GloNAF_list)%>%
+  gbif_list%>%
   wcvp_match_names(.,
                    name_col="taxon",
                    author_col=NULL,
@@ -222,20 +253,21 @@ gbif_clean%>%
   left_join(translation_table)#%>%view()
 
 ## Standardized glonaf #########################################################
-GloNAF_contoneaster<-
-GloNAF_taxon_x_region%>%
-  filter(startsWith(standardized_name, "Cotoneaster"))%>%
-  mutate(taxon_stand = standardized_name)%>%
-  left_join(translation_table)%>%
-  left_join(GloNAF_regions)%>%
-  group_by(genus_stand,species_stand,tdwg3,tdwg2,tdwg1,country,status)%>%
-  summarise(obs = length(species_stand))%>%
-  mutate(taxon_stand = paste(genus_stand,species_stand))%>%
-  ungroup()%>%
-  select(-country)%>%
-  unique()
+# GloNAF_contoneaster<-
+# GloNAF_taxon_x_region_orig%>%
+#   filter(startsWith(standardized_name, "Cotoneaster"))%>%
+#   mutate(taxon_stand = standardized_name)%>%
+#   left_join(translation_table)%>%
+#   #left_join(GloNAF_regions)%>%
+#   left_join(Glonaf_region)%>%
+#   group_by(genus_stand,species_stand,tdwg3,tdwg2,tdwg1,country,status)%>%
+#   summarise(obs = length(species_stand))%>%
+#   mutate(taxon_stand = paste(genus_stand,species_stand))%>%
+#   ungroup()%>%
+#   select(-country)%>%
+#   unique()
 
-## Makde gbif into shapefile ###################################################
+## Make gbif into shapefile ###################################################
 
 gbif_stand_geo<-
 gbif_stand%>%
@@ -300,19 +332,67 @@ final_spreadsheet<-
 
 ## Exporting ###################################################################
 
-write.csv2(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
-write.csv2(st_drop_geometry(gbif_final),"Final gbif records.csv")
-write.csv2(translation_table,"translation_table.csv")
+# write.csv2(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
+# write.csv2(st_drop_geometry(gbif_final),"Final gbif records.csv")
+# write.csv2(translation_table,"translation_table.csv")
 
 
 
 ## Check the distributions for a few species ########
 
-r<-wcvp_distribution(taxon = "Cotoneaster nan-shan",
+r<-wcvp_distribution(taxon = "Cotoneaster integerrimus",
                      introduced = F)
 wcvp_distribution_map(r)
 view(r)
 
+
+## Playing around with GeoRange ################################################
+# 
+# a<-
+# gbif_clean%>%
+#   filter(species == "Cotoneaster franchetii")%>%
+#   mutate(decimalLongitude = as.numeric(decimalLongitude),
+#          decimalLatitude = as.numeric(decimalLatitude))%>%
+#   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326,remove = F)%>%
+#   sf_make_grid(cellsize = 10,what = "polygons")
+#   
+#     #view()
+#   
+#   
+#   grid <- st_make_grid(sf_data, cellsize = 0.01, what = "centers")  # Adjust cellsize
+# 
+# 
+#       
+# a%>%
+#   group_by(countryCode)%>%
+#   st_convex_hull()%>%
+#   plot()
+# 
+# 
+# a%>%
+#   mutate(cluster = kmeans(select(decimalLongitude,decimalLatitude),centers = 6)$cluster)%>%
+#   as.factor%>%view()
+# 
+# km_result<-kmeans(x = select(a,decimalLongitude,decimalLatitude),centers = 6)$cluster
+# 
+# 
+# a%>%
+#   mutate(cluster = kmeans(x = select(a,decimalLongitude,decimalLatitude),centers = 10)$cluster)%>%
+#   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326,remove = F)%>%
+#   group_by(cluster)%>%
+#   summarise(geometry = st_convex_hull(st_union(geometry)))%>%
+#   ggplot()+
+#   geom_sf()
+#     
+# PlotConvexHull(xcoord = as.numeric(a$decimalLongitude), ycoord = as.numeric(a$decimalLatitude))
+#     plot(    )
+#     
+#     CellCount(longs = as.numeric(a$decimalLongitude), lats = as.numeric(a$decimalLatitude), CellSize = 10,
+#               latBounds = c(-90, 90))%>%
+#       view()->b
+#     
+#       ggplot(b)+
+#       geom_point(aes(Coordinates.Longitude,Coordinates.Latitude))
 
 ## Code graveyard ########
 
