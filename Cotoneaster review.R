@@ -75,10 +75,9 @@ glonaf_taxon_x_region<-
                            name == "Turkey" ~ "TUE,TUR",
                            name == "Papua New Guinea" ~ "NWG",
                            name == "Australia" ~ "NFK,NSW,NTA,QLD,SOA,TAS,VIC,WAU",
-                           startsWith(name,"Russia") == T ~ "ALT,AMU,RUC,RUN,BRY,RUS,RUW,CTA,IRK,KAM,KHA,KRA,KUR,MAG,NCS,PRM,RUE,SAK,TVA,WSB,YAK",
+                           startsWith(name,"Russia") == T ~ "ALT,AMU,RUC,RUN,RUS,RUW,CTA,KAM,KHA,KRA,KUR,MAG,NCS,PRM,RUE,SAK,TVA,WSB,YAK", # Note in glonaf it indicates all of Russia but BRY and IRK were removed
                            TRUE ~ NA))%>%
-  
-
+  separate_rows(tdwg3,sep = ",")#%>%view()
 
 
 # WCVP_native distributions 
@@ -93,9 +92,6 @@ WCVP_native%>%
   mutate(wcvp_status = ifelse(introduced == 0,"native","introduced"))%>%
   select(accepted_plant_name_id,area_code_l3,wcvp_status)%>%
   rename(tdwg3 = area_code_l3)%>%view()
-
-
-
 
 
 ## Define multi_correct function ###############################################
@@ -269,13 +265,7 @@ gbif_clean%>%
 gbif_stand_geo<-
 gbif_stand%>%
   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
-  st_join(country_shapefiles)#%>%
-  
-  # st_join(glonaf_shapefiles%>%
-  #           mutate(geometry = st_make_valid(geometry))%>%
-  #           group_by(ISOcountry)%>%
-  #           st_union()
-  #           summarise(length(IDregion)))
+  st_join(country_shapefiles)
 
 
 
@@ -298,26 +288,6 @@ gbif_stand_geo_clean<-
   filter(!is.na(LEVEL3_COD))#%>%view()
 
 ## Final_products ##############################################################
-#
-
-
-glonaf_taxon_x_region%>%
-  filter(startsWith(tdwg3,"0"))
-
-
-gbif_test<-
-  gbif_stand_geo_clean%>%
-  sample_n(1000)
-
-gbif_test%>%view()
-
-glonaf_shapefiles%>%
-  right_join(glonaf_taxon_x_region)%>%view()
-  ggplot()+
-  geom_sf()
-
-
-
 
 gbif_final<-
   gbif_stand_geo_clean%>%
@@ -325,37 +295,56 @@ gbif_final<-
   #left_join(GloNAF_contoneaster%>%select(status,tdwg3,taxon_stand))%>%
   left_join(glonaf_taxon_x_region%>%
               group_by(status,tdwg3,taxa_accepted)%>%
-              summarise(obs = length(taxa_accepted))%>%
+              summarise(obs = length(status))%>%
               #select(status,tdwg3,taxa_accepted)%>%
-              rename(wcvp_accepted_name = taxa_accepted))#%>%
+              group_by(tdwg3,taxa_accepted)%>%
+              filter(!(status == "Naturalized" & "Invasive" %in% status))%>%
+              rename(wcvp_accepted_name = taxa_accepted)%>%
+              ungroup())%>%
               #unique())#%>%
-                    
-
-
-
   left_join(WCVP_native%>%
               mutate(plant_name_id_stand = accepted_plant_name_id,
                      tdwg3 = area_code_l3)%>%
               select(plant_name_id_stand,tdwg3,introduced)%>%
               filter(!is.na(tdwg3))%>%
               unique())%>%
-  
   mutate(glonaf_status = status,
          wcvp_status = case_when(introduced == 1 ~ "introduced",
-                                 is.na(introduced) ~ "introduced",
+                                 is.na(introduced) ~ "likely_introduced",
                                  introduced == 0 & taxonRank != "GENUS" ~ "native",
                                  
                                  #taxonRank == "GENUS" ~ NA,
-                                 TRUE ~ NA))#%>%
-  select(-status,-introduced,-taxon_stand)%>%
+                                 TRUE ~ NA))%>%
+  select(-status,-introduced,-taxon_stand,-obs)%>%
   cbind(st_coordinates(.))%>%
   st_drop_geometry()%>%
   rename(decimalLongitude = X,
          decimalLatitude = Y)%>%
   filter(!is.na(wcvp_accepted_name),
-         startsWith(wcvp_accepted_name,"Cotoneaster"))#%>%view()
+         startsWith(wcvp_accepted_name,"Cotoneaster"))%>%
+  select(gbifID,
+         taxonRank,
+         coordinateUncertaintyInMeters,
+         eventDate,
+         day,
+         month,
+         year,
+         speciesKey,
+         basisOfRecord,
+         license,
+         recordedBy,
+         plant_name_id_stand,
+         wcvp_accepted_name,
+         genus_stand,
+         species_stand,
+         authors_stand,
+         tdwg3,
+         glonaf_status,
+         wcvp_status,
+         decimalLongitude,
+         decimalLatitude)
 
-12
+
 
 final_spreadsheet<-
   gbif_final%>%
@@ -381,23 +370,19 @@ write.csv2(st_drop_geometry(gbif_final),"Final gbif records_050225.csv")
 
 ## Check the distributions for a few species ########
 
-r<-wcvp_distribution(taxon = "Cotoneaster",
+r<-wcvp_distribution(taxon = "Cotoneaster niger",
                      introduced = F)
 wcvp_distribution_map(r)
 view(r)
 
-citation("WCVPdata")
 
-get_wgsrpd3_codes((glonaf_taxon_x_region%>%
-                    filter(tdwg3 == "000"))$name)
+gbif_final%>%
+  filter(wcvp_accepted_name == "Cotoneaster franchetii")%>%
+  st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
+  ggplot()+
+  geom_sf(data = country_shapefiles,fill = "white")+
+  geom_sf(aes(colour = glonaf_status,shape = wcvp_status))
 
-get_wgsrpd3_codes(
-  "GBR"
-)
-
-
-
-  
 
 
 get_wgsrpd3_codes("Russia")
