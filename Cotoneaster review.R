@@ -9,7 +9,7 @@ library(rWCVP)
 library(rWCVPdata)
 library(CoordinateCleaner)
 library(conflicted)
-library(tictoc)
+#library(tictoc)
 library(patchwork)
 #library(readxl)
 
@@ -38,8 +38,8 @@ gbif <- read_delim("0006576-241126133413365.csv", delim = "\t", escape_double = 
 
 #GloNAF taxon by region data
 
-GloNAF_taxon_x_region_orig<-
-  read.csv2("257_9_257_2_GLONAF/GLONAF/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.csv")
+#glonaf_taxon_x_region_orig<-
+#  read.csv2("257_9_257_2_GLONAF/GLONAF/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.csv")
 
 glonaf_flora2<-
   read.csv2("GloNAF 2024/glonaf_flora2.csv")
@@ -50,7 +50,10 @@ glonaf_taxon<-
 glonaf_region<-
   read.csv2("GloNAF 2024/glonaf_region.csv")
 
-GloNAF_taxon_x_region<-
+# glonaf_shapefiles<-
+#   read_sf("GloNAF 2024/glonaf_2024_nol/glonaf_2024_nol/glonaf_2024_nol.shp")
+
+glonaf_taxon_x_region<-
   left_join(glonaf_flora2,
             glonaf_taxon%>%
               select(id,accepted_plant_name_id,taxa_accepted)%>%
@@ -58,37 +61,38 @@ GloNAF_taxon_x_region<-
   filter(startsWith(taxa_accepted,"Cotoneaster"))%>%
   left_join(glonaf_region%>%
               select(id,code,name,tdwg4_id)%>%
-              rename(region_id = id))%>%view()
+              rename(region_id = id))%>%
+  mutate(tdwg3 = str_sub(tdwg4_id,1,3)
+         ,IDregion = code
+  )%>%
+  mutate(tdwg3 = case_when(tdwg3 != "000" ~ tdwg3,
+                           name == "Italy" ~ "ITA",
+                           name == "South Africa" ~ "CPP,NAT,OFS,TVL",
+                           name == "New Zealand" ~ "ATP,CTM,KER,NZN,NZS",
+                           startsWith(name,"United States") ~ "ALA,ALU,ARI,ARK,CAL,CNT,COL,DEL,FLA,GEO,IDA,ILL,INI,IOW,KAN,KTY,LOU,MAI,MAS,MIC,MIN,MNT,MRY,MSI,MSO,NCA,NDA,NEB,NEV,NWH,NWJ,NWM,NWY,OHI,OKL,ORE,PEN,RHO,SCA,SDA,TEN,TEX,UTA,VER,VRG,WAS,WDC,WIS,WVA,WYO",
+                           startsWith(name,"France") == T ~ "FRA",
+                           startsWith(name,"United Kingdom") == T ~ "GRB",
+                           name == "Turkey" ~ "TUE,TUR",
+                           name == "Papua New Guinea" ~ "NWG",
+                           name == "Australia" ~ "NFK,NSW,NTA,QLD,SOA,TAS,VIC,WAU",
+                           startsWith(name,"Russia") == T ~ "ALT,AMU,RUC,RUN,BRY,RUS,RUW,CTA,IRK,KAM,KHA,KRA,KUR,MAG,NCS,PRM,RUE,SAK,TVA,WSB,YAK",
+                           TRUE ~ NA))%>%
+  
 
 
-
-
-
-glonaf_TxR<-read.csv2("GloNAF 2024/glonaf_TxR.csv")
-
-glonaf_shapefiles<-
-  read_sf("GloNAF 2024/glonaf_2024_nol/glonaf_2024_nol/glonaf_2024_nol.shp")
-
-glonaf_sp_list<-
-  read.csv2("GloNAF 2024/glonaf_taxon_wcvp.csv")
-
-glonaf_sp_list%>%
-  filter(startsWith(taxa_accepted,"Cotoneaster"))%>%
-  view()
-
-
-
-
-GloNAF_taxon_x_region%>%
-  rename(accepted_plant_name_id = taxon_wcvp_id,
-         id.txr = id)%>%
-  left_join(glonaf_sp_list)%>%view()
 
 # WCVP_native distributions 
 WCVP_native<-
   wcvp_names%>%
   filter(genus == "Cotoneaster")%>%
   left_join(wcvp_distributions)#%>%view()
+
+
+WCVP_native%>%
+  filter(taxon_status == "Accepted")%>%
+  mutate(wcvp_status = ifelse(introduced == 0,"native","introduced"))%>%
+  select(accepted_plant_name_id,area_code_l3,wcvp_status)%>%
+  rename(tdwg3 = area_code_l3)%>%view()
 
 
 
@@ -175,15 +179,15 @@ gbif_clean<-
   cc_val()%>%
   cc_zero()
 
-# Visualiszing all the removed records #####
+# Visualising all the removed records #####
 
-gbif%>%
-  filter(! gbifID %in% gbif_clean$gbifID)%>%
-  ggplot(aes(decimalLongitude,decimalLatitude))+
-  geom_point()+
-gbif_clean%>%
-  ggplot(aes(decimalLongitude,decimalLatitude))+
-  geom_point()
+# gbif%>%
+#   filter(! gbifID %in% gbif_clean$gbifID)%>%
+#   ggplot(aes(decimalLongitude,decimalLatitude))+
+#   geom_point()+
+# gbif_clean%>%
+#   ggplot(aes(decimalLongitude,decimalLatitude))+
+#   geom_point()
 
 # Cleaned the coordinates, refer to citation for details
 citation("CoordinateCleaner")
@@ -198,14 +202,6 @@ gbif_list<-
   mutate(taxon = ifelse(taxonRank == "GENUS",genus,species))%>%
   group_by(taxon)%>%
   summarise(num_recs = length(species))#%>%view()
-
-# GloNAF_list<-
-# GloNAF_taxon_x_region%>%
-#   filter(startsWith(standardized_name, "Cotoneaster"))%>%
-#   left_join(GloNAF_regions)%>%
-#   group_by(standardized_name)%>%
-#   summarise()%>%
-#   rename(taxon = standardized_name)#%>%view()
 
 
 # Note: this block takes about a minute to run
@@ -244,9 +240,6 @@ translation_table<-
   matched_list_checked%>%
   filter(multi_correct == "keeper" | multi_correct == "keeper_checked")%>%
   select(taxon,num_recs,wcvp_accepted_id,wcvp_accepted_name,genus,species,taxon_authors)%>%
-  #rename(plant_name_id = wcvp_accepted_id)%>%
-  #left_join(wcvp_names%>%
-  #            select(genus,species, taxon_authors,plant_name_id))%>%
   rename(taxon_stand = taxon,
          num_recs_stand = num_recs,
          plant_name_id_stand = wcvp_accepted_id,
@@ -270,27 +263,22 @@ gbif_clean%>%
   mutate(taxon_stand = ifelse(taxonRank == "GENUS",genus,species))%>%
   left_join(translation_table)#%>%view()
 
-## Standardized glonaf #########################################################
-# GloNAF_contoneaster<-
-# GloNAF_taxon_x_region_orig%>%
-#   filter(startsWith(standardized_name, "Cotoneaster"))%>%
-#   mutate(taxon_stand = standardized_name)%>%
-#   left_join(translation_table)%>%
-#   #left_join(GloNAF_regions)%>%
-#   left_join(Glonaf_region)%>%
-#   group_by(genus_stand,species_stand,tdwg3,tdwg2,tdwg1,country,status)%>%
-#   summarise(obs = length(species_stand))%>%
-#   mutate(taxon_stand = paste(genus_stand,species_stand))%>%
-#   ungroup()%>%
-#   select(-country)%>%
-#   unique()
 
 ## Make gbif into shapefile ###################################################
 
 gbif_stand_geo<-
 gbif_stand%>%
   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
-  st_join(country_shapefiles)#%>%view()
+  st_join(country_shapefiles)#%>%
+  
+  # st_join(glonaf_shapefiles%>%
+  #           mutate(geometry = st_make_valid(geometry))%>%
+  #           group_by(ISOcountry)%>%
+  #           st_union()
+  #           summarise(length(IDregion)))
+
+
+
 
 # This shows an example in Norway of some records not within the country boundaries, 
 # much of this is likely due to rounded coordinates 
@@ -310,29 +298,64 @@ gbif_stand_geo_clean<-
   filter(!is.na(LEVEL3_COD))#%>%view()
 
 ## Final_products ##############################################################
+#
+
+
+glonaf_taxon_x_region%>%
+  filter(startsWith(tdwg3,"0"))
+
+
+gbif_test<-
+  gbif_stand_geo_clean%>%
+  sample_n(1000)
+
+gbif_test%>%view()
+
+glonaf_shapefiles%>%
+  right_join(glonaf_taxon_x_region)%>%view()
+  ggplot()+
+  geom_sf()
+
+
+
 
 gbif_final<-
   gbif_stand_geo_clean%>%
   mutate(tdwg3 = LEVEL3_COD)%>%
-  left_join(GloNAF_contoneaster%>%select(status,tdwg3,taxon_stand))%>%
-  left_join(WCVP_native%>%mutate(plant_name_id_stand = accepted_plant_name_id,
-                                 tdwg3 = area_code_l3)%>%
+  #left_join(GloNAF_contoneaster%>%select(status,tdwg3,taxon_stand))%>%
+  left_join(glonaf_taxon_x_region%>%
+              group_by(status,tdwg3,taxa_accepted)%>%
+              summarise(obs = length(taxa_accepted))%>%
+              #select(status,tdwg3,taxa_accepted)%>%
+              rename(wcvp_accepted_name = taxa_accepted))#%>%
+              #unique())#%>%
+                    
+
+
+
+  left_join(WCVP_native%>%
+              mutate(plant_name_id_stand = accepted_plant_name_id,
+                     tdwg3 = area_code_l3)%>%
               select(plant_name_id_stand,tdwg3,introduced)%>%
+              filter(!is.na(tdwg3))%>%
               unique())%>%
+  
   mutate(glonaf_status = status,
          wcvp_status = case_when(introduced == 1 ~ "introduced",
-                                 is.na(introduced) ~ "likely_introduced",
+                                 is.na(introduced) ~ "introduced",
                                  introduced == 0 & taxonRank != "GENUS" ~ "native",
                                  
                                  #taxonRank == "GENUS" ~ NA,
-                                 TRUE ~ NA))%>%
+                                 TRUE ~ NA))#%>%
   select(-status,-introduced,-taxon_stand)%>%
   cbind(st_coordinates(.))%>%
   st_drop_geometry()%>%
   rename(decimalLongitude = X,
          decimalLatitude = Y)%>%
   filter(!is.na(wcvp_accepted_name),
-         startsWith(wcvp_accepted_name,"Cotoneaster"))
+         startsWith(wcvp_accepted_name,"Cotoneaster"))#%>%view()
+
+12
 
 final_spreadsheet<-
   gbif_final%>%
@@ -350,19 +373,34 @@ final_spreadsheet<-
 
 ## Exporting ###################################################################
 
-# write.csv2(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet.csv")
-# write.csv2(st_drop_geometry(gbif_final),"Final gbif records.csv")
+write.csv2(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet_050225.csv")
+write.csv2(st_drop_geometry(gbif_final),"Final gbif records_050225.csv")
 # write.csv2(translation_table,"translation_table.csv")
 
 
 
 ## Check the distributions for a few species ########
 
-r<-wcvp_distribution(taxon = "Cotoneaster integerrimus",
+r<-wcvp_distribution(taxon = "Cotoneaster",
                      introduced = F)
 wcvp_distribution_map(r)
 view(r)
 
+citation("WCVPdata")
+
+get_wgsrpd3_codes((glonaf_taxon_x_region%>%
+                    filter(tdwg3 == "000"))$name)
+
+get_wgsrpd3_codes(
+  "GBR"
+)
+
+
+
+  
+
+
+get_wgsrpd3_codes("Russia")
 
 
 ## Code graveyard ########
@@ -637,3 +675,54 @@ view(r)
 #   }
 #}
 # ?min
+
+# ISO2_tdwg_converter<-
+#   read.csv2("ISO2_tdwg4.csv")
+# 
+# 
+# ISO2_ISO3<-
+#   read.csv2("ISO2_ISO3.csv",
+#             na.strings = " ")
+# 
+# ISO2_tdwg_converter%>%
+#   #rowwise()%>%
+#   mutate(ISO2_code = str_extract_all(ISO.Code.Level.4.Name.5.letter.Level.4.Code.Region.Code.Name,
+#                                          "\\b[A-Z]{2,}\\b"))%>%
+#   mutate(vector_column = str_remove_all(ISO2_code, 'c\\(|\\)|"')) %>%  # Remove c(...) and quotes
+#   separate_wider_delim(vector_column, delim = ", ", names = c("ISO2", "tdwg2", "tdwg4"))%>%
+#   full_join(ISO2_ISO3)%>%view()
+## Standardized glonaf ##
+# GloNAF_contoneaster<-
+# glonaf_taxon_x_region_orig%>%
+#   filter(startsWith(standardized_name, "Cotoneaster"))%>%
+#   mutate(taxon_stand = standardized_name)%>%
+#   left_join(translation_table)%>%
+#   #left_join(GloNAF_regions)%>%
+#   left_join(Glonaf_region)%>%
+#   group_by(genus_stand,species_stand,tdwg3,tdwg2,tdwg1,country,status)%>%
+#   summarise(obs = length(species_stand))%>%
+#   mutate(taxon_stand = paste(genus_stand,species_stand))%>%
+#   ungroup()%>%
+#   select(-country)%>%
+#   unique()%>%view()
+# a<-
+# glonaf_shapefiles%>%
+#   mutate(ISOcountry = ifelse(is.na(ISOcountry),str_sub(IDregion,1,3),ISOcountry))%>%
+#   select(ISOcountry,name)%>%
+#   right_join(glonaf_taxon_x_region%>%
+#                mutate(ISOcountry = str_sub(code,1,3)))
+# 
+# 
+# glonaf_shapefiles%>%
+#   right_join(glonaf_taxon_x_region%>%
+#                filter(tdwg3 == "000"))%>%
+#   ggplot()+
+#   geom_sf()
+#   
+# 
+# glonaf_taxon_x_region%>%
+#   filter(tdwg3 == "000")%>%view()
+
+# glonaf_TxR<-
+#   read.csv2("GloNAF 2024/glonaf_TxR.csv")%>%
+#   filter(wcvp12_accepted_plant_name_id%in%glonaf_taxon_x_region$taxon_wcvp_id)
