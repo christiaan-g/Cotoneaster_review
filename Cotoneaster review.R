@@ -75,7 +75,7 @@ glonaf_taxon_x_region<-
                            name == "Turkey" ~ "TUE,TUR",
                            name == "Papua New Guinea" ~ "NWG",
                            name == "Australia" ~ "NFK,NSW,NTA,QLD,SOA,TAS,VIC,WAU",
-                           startsWith(name,"Russia") == T ~ "ALT,AMU,RUC,RUN,RUS,RUW,CTA,KAM,KHA,KRA,KUR,MAG,NCS,PRM,RUE,SAK,TVA,WSB,YAK", # Note in glonaf it indicates all of Russia but BRY and IRK were removed
+                           startsWith(name,"Russia") == T ~ "ALT,AMU,RUC,RUN,RUS,RUW,CTA,KAM,KHA,KRA,KUR,MAG,NCS,PRM,RUE,SAK,TVA,WSB,YAK,BRY,IRK",
                            TRUE ~ NA))%>%
   separate_rows(tdwg3,sep = ",")#%>%view()
 
@@ -362,8 +362,8 @@ final_spreadsheet<-
 
 ## Exporting ###################################################################
 
-write.csv2(st_drop_geometry(final_spreadsheet),"Final summary spreadsheet_050225.csv")
-write.csv2(st_drop_geometry(gbif_final),"Final gbif records_050225.csv")
+write.csv2(st_drop_geometry(final_spreadsheet),"Cotoneaster review output/Final summary spreadsheet_050225.csv")
+write.csv2(st_drop_geometry(gbif_final),"Cotoneaster review output/Final gbif records_050225.csv")
 # write.csv2(translation_table,"translation_table.csv")
 
 
@@ -377,7 +377,7 @@ view(r)
 
 
 gbif_final%>%
-  filter(wcvp_accepted_name == "Cotoneaster franchetii")%>%
+  filter(wcvp_accepted_name == "Cotoneaster horizontalis")%>%
   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
   ggplot()+
   geom_sf(data = country_shapefiles,fill = "white")+
