@@ -278,8 +278,6 @@ ggplot(gbif_stand_geo%>%filter(is.na(LEVEL3_NAM)))+
   coord_sf(xlim = c(5,10), ylim = c(60, 58), expand = FALSE)
 
 
-
-
 gbif_stand_geo%>%filter(is.na(LEVEL3_NAM))%>%
   nrow()
 
@@ -345,6 +343,59 @@ gbif_final<-
          decimalLatitude)
 
 
+## Allocating nativeness #######################################################
+
+
+
+
+test<-
+readr::read_csv2("Cotoneaster review output/Final gbif records_050225.csv")
+
+test2<-
+test%>%
+  mutate(nativeness = case_when((glonaf_status == "Naturalized"|
+                                  glonaf_status == "Invasive") &
+                                  (wcvp_status == "introduced"|
+                                  wcvp_status == "likely_introduced")~ "non-native",
+                                is.na(glonaf_status) & wcvp_status == "native" ~ "native",
+                                is.na(glonaf_status) & wcvp_status == "introduced"~ "non-native"))%>%
+  mutate(new = "0",
+         neighbour = "0")#%>%view()
+
+
+library(RANN)
+# This algorithm uses euclidean distance which may be inaccurate but I'll leave it as is for now...
+
+for (i in seq_len(nrow(test2))) {
+  
+  if (is.na(test2$nativeness[i])) {
+    
+    subset_df <- test2 %>%
+      filter(!is.na(nativeness),
+             species_stand == test2$species_stand[i])
+    
+    if (nrow(subset_df) == 0) next
+    
+    coords <- subset_df %>%
+      select(decimalLongitude, decimalLatitude) %>%
+      as.matrix()
+    
+    query <- matrix(c(test2$decimalLongitude[i],
+                      test2$decimalLatitude[i]),
+                    nrow = 1)
+    
+    nn <- nn2(data = coords, query = query, k = 1)
+    
+    nearest_point <- subset_df[nn$nn.idx, ]
+    
+    test2$new[i] <- nearest_point$nativeness
+    test2$neighbour[i] <- nn$nn.dists
+  }
+}
+
+
+## Final spreadsheet ###########################################################
+
 
 final_spreadsheet<-
   gbif_final%>%
@@ -362,8 +413,8 @@ final_spreadsheet<-
 
 ## Exporting ###################################################################
 
-write.csv2(st_drop_geometry(final_spreadsheet),"Cotoneaster review output/Final summary spreadsheet_050225.csv")
-write.csv2(st_drop_geometry(gbif_final),"Cotoneaster review output/Final gbif records_050225.csv")
+#write.csv2(st_drop_geometry(final_spreadsheet),"Cotoneaster review output/Final summary spreadsheet_050225.csv")
+#write.csv2(st_drop_geometry(gbif_final),"Cotoneaster review output/Final gbif records_050225.csv")
 # write.csv2(translation_table,"translation_table.csv")
 
 
@@ -711,3 +762,63 @@ get_wgsrpd3_codes("Russia")
 # glonaf_TxR<-
 #   read.csv2("GloNAF 2024/glonaf_TxR.csv")%>%
 #   filter(wcvp12_accepted_plant_name_id%in%glonaf_taxon_x_region$taxon_wcvp_id)
+
+# 
+# classify_unknown <- function(species,nativeness,decimalLongitude,decimalLatitude){
+#   
+#   for (i in length(test2)) {
+#     
+#     
+#     
+#   }
+#   
+#   
+#   library(RANN)
+#   
+#   coords <- test2%>%
+#     filter(!is.na(nativeness),
+#            species == species)%>%
+#     select(decimalLongitude, decimalLatitude)%>%
+#     as.matrix()
+#   
+#   #target_lon<-coords[1,1]
+#   #target_lat<-coords[1,2]
+#   #query  <- matrix(c(target_lon, target_lat), nrow = 1)
+#   query <- matrix(c(decimalLongitude,decimalLatitude),nrow = 1)
+#   
+#   nn <- nn2(
+#     data = coords,
+#     query = query,
+#     k = 1
+#   )
+#   
+#   nearest_point <- test2[nn$nn.idx, ]
+#   
+# }
+# test2<-
+# test2%>%mutate(new = "0")
+# 
+# for (i in 1:nrow(test2)) {
+#   
+#   if(is.na(test2$nativeness[i])){
+#     
+#     coords <- test2%>%
+#       filter(!is.na(nativeness),
+#              species_stand == test2$species_stand[i])%>%
+#       select(decimalLongitude, decimalLatitude)%>%
+#       as.matrix()
+#     
+#     query  <- matrix(c(test2$decimalLontitude[i], test2$decimalLatitude[i]), nrow = 1)
+#     
+#     nn <- nn2(
+#       data = coords,
+#       query = query,
+#       k = 1
+#     )
+#     
+#     nearest_point <- test2[nn$nn.idx, ]
+#     
+#     test2$new[i] <- nearest_point$nativeness
+#     
+#   }
+# }
