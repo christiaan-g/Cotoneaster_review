@@ -300,7 +300,7 @@ gbif_final<-
               rename(wcvp_accepted_name = taxa_accepted)%>%
               ungroup())%>%
               #unique())#%>%
-  left_join(WCVP_native%>%
+  left_join(wcvp_native%>%
               mutate(plant_name_id_stand = accepted_plant_name_id,
                      tdwg3 = area_code_l3)%>%
               select(plant_name_id_stand,tdwg3,introduced)%>%
@@ -346,8 +346,8 @@ gbif_final<-
 ## Allocating nativeness #######################################################
 
 
-gbif_final<-
-  readr::read_csv2("Cotoneaster review output/Final gbif records_050225.csv")
+# gbif_final<-
+#   readr::read_csv2("Cotoneaster review output/Final gbif records_050225.csv")
 
 gbif_final<-
   gbif_final%>%
