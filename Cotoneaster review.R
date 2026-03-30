@@ -15,6 +15,8 @@ library(conflicted)
 #library(tictoc)
 library(patchwork)
 #library(readxl)
+library(here)
+source("sphere.R")
 theme_set(theme_minimal())
 
 conflict_scout()
@@ -340,7 +342,7 @@ gbif_final<-
          glonaf_status,
          wcvp_status,
          decimalLongitude,
-         decimalLatitude)
+         decimalLatitude)%>%
 
 
 ## Allocating nativeness #######################################################
@@ -349,7 +351,6 @@ gbif_final<-
 # gbif_final<-
 #   readr::read_csv2("Cotoneaster review output/Final gbif records_050225.csv")
 
-gbif_final<-
   gbif_final%>%
   mutate(nativeness = case_when((glonaf_status == "Naturalized"|
                                   glonaf_status == "Invasive") &
@@ -359,7 +360,21 @@ gbif_final<-
                                 is.na(glonaf_status) & wcvp_status == "introduced"~ "non-native"))%>%
   mutate(nn_nativeness = "0",
          nn_id = "0",
-         nn_dist = "0")#%>%view()
+         nn_dist = "0")%>%
+  mutate(x = sphere(lat = decimalLatitude,lon = decimalLongitude)[[1]],
+         y = sphere(lat = decimalLatitude,lon = decimalLongitude)[[2]],
+         z = sphere(lat = decimalLatitude,lon = decimalLongitude)[[3]])  
+
+
+
+gbif_final%>%
+  rgl::plot3d(x = .$x,y = .$y,z = .$z,colour = .$species_stand)
+
+# htmlwidgets::saveWidget(rglwidget(width = 520, height = 520), 
+#                         file = here("3dscatter.html"),
+#                         libdir = "libs",
+#                         selfcontained = FALSE
+# )
 
 
 library(RANN)
@@ -379,6 +394,7 @@ for (i in seq_len(nrow(gbif_final))) {
     coords <- subset_df %>%
       select(decimalLongitude, decimalLatitude) %>%
       as.matrix()
+    
     
     query <- matrix(c(gbif_final$decimalLongitude[i],
                       gbif_final$decimalLatitude[i]),
@@ -432,20 +448,20 @@ ggplot()+
             st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326),
           aes(colour = nativeness))
 
-# m <- runif(6,0,139)%>%round()
-# 
-# 
-# plots_random<-list()
-# 
-# for (j in 1:6) {
-#   
-#   plots_random[[j]]<-results[[m[[j]]]]
-#   
-# }
-# 
-# plots_random[[2]]
-# 
-# plots_random
+m <- runif(6,0,139)%>%round()
+
+
+plots_random<-list()
+
+for (j in 1:6) {
+
+  plots_random[[j]]<-results[[m[[j]]]]
+
+}
+
+plots_random[[2]]
+
+plots_random[1:6]
 
 
 
@@ -476,20 +492,20 @@ final_spreadsheet<-
 
 ## Check the distributions for a few species ########
 
-r<-wcvp_distribution(taxon = "Cotoneaster washanensis",
-                     introduced = F)
-wcvp_distribution_map(r)
-view(r)
-
-
-gbif_final%>%
-  filter(wcvp_accepted_name == "Cotoneaster horizontalis")%>%
-  st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
-  ggplot()+
-  geom_sf(data = country_shapefiles,fill = "white")+
-  geom_sf(aes(colour = glonaf_status,shape = wcvp_status))
-
-
-
-get_wgsrpd3_codes("Russia")
+# r<-wcvp_distribution(taxon = "Cotoneaster washanensis",
+#                      introduced = F)
+# wcvp_distribution_map(r)
+# view(r)
+# 
+# 
+# gbif_final%>%
+#   filter(wcvp_accepted_name == "Cotoneaster horizontalis")%>%
+#   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
+#   ggplot()+
+#   geom_sf(data = country_shapefiles,fill = "white")+
+#   geom_sf(aes(colour = glonaf_status,shape = wcvp_status))
+# 
+# 
+# 
+# get_wgsrpd3_codes("Russia")
 
