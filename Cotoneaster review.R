@@ -3,7 +3,7 @@
 
 rm(list = ls())
 #setwd("~/Universiteit werk/Masters/Cotoneaster review")
-setwd("~/Cotoneaster_review")
+#setwd("~/Cotoneaster_review")
 library(tidyverse)
 library(readr)
 library(sf)
@@ -17,7 +17,7 @@ library(patchwork)
 #library(readxl)
 library(here)
 source("sphere.R")
-theme_set(theme_minimal())
+theme_set(theme_classic())
 
 conflict_scout()
 conflicts_prefer(dplyr::filter,
@@ -40,7 +40,10 @@ country_shapefiles<-wgsrpd3%>%
 ## Load data from gbif and GloNAF #########################################################
 
 #gbif data
-gbif <- read_delim("0006576-241126133413365.csv", delim = "\t", escape_double = FALSE,trim_ws = TRUE)
+gbif <- read_delim("0006576-241126133413365.csv", 
+                   delim = "\t", 
+                   escape_double = FALSE,
+                   trim_ws = TRUE)
 
 #GloNAF taxon by region data
 
@@ -163,7 +166,7 @@ custom_max <- function(x) {
 
 ## Clean gbif data #############################################################
 
-#str(gbif)
+str(gbif)
 
 
 # WARNING: this function can take a while to run
