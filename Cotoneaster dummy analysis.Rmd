@@ -135,6 +135,8 @@ Here, I use the `glmmTMB` package which allows for the flexible incorporation of
 Of course, normally you would check for assumptions here but since the data are simulated we can of course say that our data meet all the required assumptions.
 
 
+The model in this case explained a substantial amount of data with an adjusted R<sup>2</sup> value of `r performance::performance(model)$R2_adjusted`.
+
 Let's see the summary table.
 
 ```{r}
@@ -254,15 +256,6 @@ predictions(model,newdata = newdata3,type = "response")%>%
 ```
 
 **Figure 4:** Marginal response curves for fruit diameter and leaf area.
-
-
-```{r}
-predictions(model,newdata = newdata3,type = "conditional")%>%
-  ggplot()+
-  geom_point(aes(leaf_area,invasive_area))+
-  geom_line(aes(leaf_area,estimate))
-  
-```
 
 
 ## Final thoughts
