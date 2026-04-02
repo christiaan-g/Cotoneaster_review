@@ -1,9 +1,7 @@
-
 ## Setup #######################################################################
 
 rm(list = ls())
-#setwd("~/Universiteit werk/Masters/Cotoneaster review")
-#setwd("~/Cotoneaster_review")
+
 library(tidyverse)
 library(readr)
 library(sf)
@@ -12,17 +10,16 @@ library(rWCVP)
 library(rWCVPdata)
 library(CoordinateCleaner)
 library(conflicted)
-#library(tictoc)
 library(patchwork)
-#library(readxl)
 library(here)
-source("sphere.R")
+
+source(here("rscripts/Cotoneaster review functions.R"))
+
 theme_set(theme_classic())
 
 conflict_scout()
 conflicts_prefer(dplyr::filter,
                  dplyr::lag)
-
 
 ## Load WCVP data ##############################################################
 
@@ -33,34 +30,37 @@ wcvp_names<-rWCVPdata::wcvp_names
 country_shapefiles<-wgsrpd3%>%
   st_set_crs(4326)
 
-# ggplot(country_shapefiles)+
-#   geom_sf()
-
-
 ## Load data from gbif and GloNAF #########################################################
 
-#gbif data
-gbif <- read_delim("0006576-241126133413365.csv", 
+gbif <- read_delim(here("data/GBIF downloads/0075125-260226173443078.csv"), 
                    delim = "\t", 
                    escape_double = FALSE,
                    trim_ws = TRUE)
+gbif<-
+  gbif%>%
+  select(gbifID,
+         genus,species,infraspecificEpithet,
+         taxonRank,
+         scientificName,
+         countryCode,
+         decimalLatitude,decimalLongitude,
+         day,month,year,
+         establishmentMeans,
+         institutionCode,
+         collectionCode,
+         basisOfRecord
+         )
 
 #GloNAF taxon by region data
 
-#glonaf_taxon_x_region_orig<-
-#  read.csv2("257_9_257_2_GLONAF/GLONAF/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.csv")
-
 glonaf_flora2<-
-  read.csv2("GloNAF 2024/glonaf_flora2.csv")
+  read.csv2(here("data/GloNAF 2024/glonaf_flora2.csv"))
 
 glonaf_taxon<-
-  read.csv2("GloNAF 2024/glonaf_taxon_wcvp.csv")
+  read.csv2(here("data/GloNAF 2024/glonaf_taxon_wcvp.csv"))
 
 glonaf_region<-
-  read.csv2("GloNAF 2024/glonaf_region.csv")
-
-# glonaf_shapefiles<-
-#   read_sf("GloNAF 2024/glonaf_2024_nol/glonaf_2024_nol/glonaf_2024_nol.shp")
+  read.csv2(here("data/GloNAF 2024/glonaf_region.csv"))
 
 glonaf_taxon_x_region<-
   left_join(glonaf_flora2,
@@ -87,121 +87,44 @@ glonaf_taxon_x_region<-
                            TRUE ~ NA))%>%
   separate_rows(tdwg3,sep = ",")
 
-
 # WCVP_native distributions 
 wcvp_native<-
   wcvp_names%>%
   filter(genus == "Cotoneaster")%>%
   left_join(wcvp_distributions)#%>%view()
 
-
-# wcvp_native%>%
-#   filter(taxon_status == "Accepted")%>%
-#   mutate(wcvp_status = ifelse(introduced == 0,"native","introduced"))%>%
-#   select(accepted_plant_name_id,area_code_l3,wcvp_status)%>%
-#   rename(tdwg3 = area_code_l3)%>%view()
-
-
-## Define multi_correct function ###############################################
-
-multi_correct<-function (df){
-  
-  #synonym_codes <- c("Synonym", "Orthographic", "Artificial Hybrid", "Unplaced")
-  
-  synonym_codes <- c("Synonym")
-  
-  accepted_matches <-
-    df %>%
-    group_by(taxon)%>%
-    mutate(n_matches = n())%>%
-    mutate(multi_correct = case_when(multiple_matches == FALSE ~ "keeper",
-                                     multiple_matches == TRUE & wcvp_status == "Accepted" ~ "keeper",
-                                     TRUE ~ "remove"))%>%
-    mutate(multi_correct = case_when(multiple_matches == TRUE & 
-                                       wcvp_status%in%synonym_codes == TRUE & 
-                                       "keeper" %in% multi_correct == FALSE ~ "keeper",
-                                     TRUE ~ multi_correct))%>%
-    ungroup()
-  
-  #Shows species for which no legitimate name was found
-  no_legit_match<-
-    df%>%
-    distinct(taxon)%>%
-    mutate(keeper_found = (df%>%distinct(taxon))$taxon %in% (accepted_matches%>%filter(multi_correct == "keeper"))$taxon)%>%
-    filter(keeper_found == F)
-  
-  #Shows species for which multiple legitimate names were found, `dups` is the number of multiples found
-  multi_legit_match<-
-    accepted_matches%>%
-    filter(multi_correct == "keeper")%>%
-    group_by(taxon)%>%
-    summarise(dups = length(taxon))%>%
-    filter(dups>1)
-  
-  accepted_matches2<-
-    accepted_matches%>%
-    mutate(multi_correct = ifelse(taxon%in%no_legit_match$taxon | taxon%in%multi_legit_match$taxon,"manual_check_needed",multi_correct))
-  
-  return(accepted_matches2)
-  
-}
-
-## Define custom min and max functions #########################################
-
-custom_min <- function(x) {
-  if (all(is.na(x))) {
-    return(NA)
-  } else {
-    return(min(x, na.rm = TRUE))
-  }
-}
-
-custom_max <- function(x) {
-  if (all(is.na(x))) {
-    return(NA)
-  } else {
-    return(max(x, na.rm = TRUE))
-  }
-}
-
 ## Clean gbif data #############################################################
 
-str(gbif)
-
-
 # WARNING: this function can take a while to run
-# Here's a question... should the gbif cleaning happen before or after the matching to the WCVP?
 
-
-gbif_clean<-
+gbif<-
   gbif%>%
-  cc_aohi()%>%
-  cc_cen()%>%
-  cc_dupl()%>%
-  cc_equ()%>%
-  cc_inst()%>%
-  cc_val()%>%
-  cc_zero()
+  clean_coordinates()%>%
+  filter(.summary)%>%
+  select(-(.val:.summary))
 
 # Visualising all the removed records #####
 
-# gbif%>%
-#   filter(! gbifID %in% gbif_clean$gbifID)%>%
-#   ggplot(aes(decimalLongitude,decimalLatitude))+
-#   geom_point()+
-# gbif_clean%>%
-#   ggplot(aes(decimalLongitude,decimalLatitude))+
-#   geom_point()
+gbif%>%
+  filter(!.summary)%>%
+  ggplot(aes(decimalLongitude,decimalLatitude))+
+  annotation_borders()+
+  geom_point()+
+
+gbif%>%
+  filter(.summary)%>%
+  ggplot(aes(decimalLongitude,decimalLatitude))+
+  annotation_borders()+
+  geom_point()
 
 # Cleaned the coordinates, refer to citation for details
 # citation("CoordinateCleaner")
 
 
-
 ## Create translation table ######################################################
 
 gbif_list<-
-  gbif_clean%>%
+  gbif%>%
   mutate(taxon = ifelse(taxonRank == "GENUS",genus,species))%>%
   group_by(taxon)%>%
   summarise(num_recs = length(species))#%>%view()
@@ -209,7 +132,6 @@ gbif_list<-
 
 # Note: this block takes about a minute to run
 matched_list<-
-  #full_join(gbif_list,GloNAF_list)%>%
   gbif_list%>%
   wcvp_match_names(.,
                    name_col="taxon",
@@ -223,24 +145,25 @@ matched_list<-
   select(-plant_name_id)%>%
   rename(wcvp_accepted_name = taxon_name)
 
-
-matched_list_checked<-
-  matched_list%>%
-  mutate(multi_correct = 
-           case_when(taxon == "Cotoneaster dammeri x integrifolius" & wcvp_accepted_name == "Cotoneaster integrifolius" ~ "remove_checked",
-                     multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster leveillei" ~ "remove_checked",
-                     multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster nan-shan" ~ "keeper_checked",
-                     multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster obscurus" ~ "keeper_checked",
-                     multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster hebephyllus var. hebephyllus" ~ "remove_checked",
-                     multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster soonogoricus" ~ "keeper_checked",
-                     multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster affinis" ~ "remove_checked",
-                     multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster horizontalis" ~ "keeper_checked",
-                     taxon == "Cotoneaster parnassicus" & wcvp_accepted_name == "Eriobotrya elliptica" ~ "remove_checked",
-                     taxon == "Cotoneaster parnassicus" & wcvp_accepted_name == "Cotoneaster lindleyi" ~ "keeper_checked",
-                     TRUE ~ multi_correct))#%>%view()
+# Here I manually check all the records in code 
+# matched_list_checked<-
+#   matched_list%>%
+#   mutate(multi_correct = 
+#            case_when(taxon == "Cotoneaster dammeri x integrifolius" & wcvp_accepted_name == "Cotoneaster integrifolius" ~ "remove_checked",
+#                      multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster leveillei" ~ "remove_checked",
+#                      multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster nan-shan" ~ "keeper_checked",
+#                      multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster obscurus" ~ "keeper_checked",
+#                      multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster hebephyllus var. hebephyllus" ~ "remove_checked",
+#                      multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster soonogoricus" ~ "keeper_checked",
+#                      multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster affinis" ~ "remove_checked",
+#                      multi_correct == "manual_check_needed" & wcvp_accepted_name == "Cotoneaster horizontalis" ~ "keeper_checked",
+#                      taxon == "Cotoneaster parnassicus" & wcvp_accepted_name == "Eriobotrya elliptica" ~ "remove_checked",
+#                      taxon == "Cotoneaster parnassicus" & wcvp_accepted_name == "Cotoneaster lindleyi" ~ "keeper_checked",
+#                      TRUE ~ multi_correct))#%>%view()
 
 translation_table<-
-  matched_list_checked%>%
+  #matched_list_checked%>%
+  matched_list%>%
   filter(multi_correct == "keeper" | multi_correct == "keeper_checked")%>%
   select(taxon,num_recs,wcvp_accepted_id,wcvp_accepted_name,genus,species,taxon_authors)%>%
   rename(taxon_stand = taxon,
@@ -261,16 +184,16 @@ length(unique(translation_table$taxon_stand)) == nrow(translation_table)
 
 ## Standardize nomenclature ####################################################
 
-gbif_stand<-
-  gbif_clean%>%
+gbif<-
+  gbif%>%
   mutate(taxon_stand = ifelse(taxonRank == "GENUS",genus,species))%>%
   left_join(translation_table)#%>%view()
 
 
 ## Make gbif into shapefile ###################################################
 
-gbif_stand_geo<-
-  gbif_stand%>%
+gbif_geo<-
+  gbif%>%
   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
   st_join(country_shapefiles)
 
@@ -283,17 +206,17 @@ gbif_stand_geo<-
 #   coord_sf(xlim = c(5,10), ylim = c(60, 58), expand = FALSE)
 
 
-gbif_stand_geo%>%filter(is.na(LEVEL3_NAM))%>%
+gbif_geo%>%filter(is.na(LEVEL3_NAM))%>%
   nrow()
 
-gbif_stand_geo_clean<-
-  gbif_stand_geo%>%
+gbif_geo<-
+  gbif_geo%>%
   filter(!is.na(LEVEL3_COD))#%>%view()
 
 ## Final_products ##############################################################
 
 gbif_final<-
-  gbif_stand_geo_clean%>%
+  gbif_geo%>%
   mutate(tdwg3 = LEVEL3_COD)%>%
   #left_join(GloNAF_contoneaster%>%select(status,tdwg3,taxon_stand))%>%
   left_join(glonaf_taxon_x_region%>%
@@ -313,7 +236,7 @@ gbif_final<-
               unique())%>%
   mutate(glonaf_status = status,
          wcvp_status = case_when(introduced == 1 ~ "introduced",
-                                 is.na(introduced) ~ "likely_introduced",
+                                 #is.na(introduced) ~ "likely_introduced",
                                  introduced == 0 & taxonRank != "GENUS" ~ "native",
                                  
                                  #taxonRank == "GENUS" ~ NA,
@@ -325,40 +248,14 @@ gbif_final<-
          decimalLatitude = Y)%>%
   filter(!is.na(wcvp_accepted_name),
          startsWith(wcvp_accepted_name,"Cotoneaster"))%>%
-  select(gbifID,
-         taxonRank,
-         coordinateUncertaintyInMeters,
-         eventDate,
-         day,
-         month,
-         year,
-         speciesKey,
-         basisOfRecord,
-         license,
-         recordedBy,
-         plant_name_id_stand,
-         wcvp_accepted_name,
-         genus_stand,
-         species_stand,
-         authors_stand,
-         tdwg3,
-         glonaf_status,
-         wcvp_status,
-         decimalLongitude,
-         decimalLatitude)%>%
 
 
 ## Allocating nativeness #######################################################
 
-
-# gbif_final<-
-#   readr::read_csv2("Cotoneaster review output/Final gbif records_050225.csv")
-
-  gbif_final%>%
   mutate(nativeness = case_when((glonaf_status == "Naturalized"|
                                   glonaf_status == "Invasive") &
                                   (wcvp_status == "introduced"|
-                                  wcvp_status == "likely_introduced")~ "non-native",
+                                  wcvp_status == "likely_introduced") ~ "non-native",
                                 is.na(glonaf_status) & wcvp_status == "native" ~ "native",
                                 is.na(glonaf_status) & wcvp_status == "introduced"~ "non-native"))%>%
   mutate(nn_nativeness = "0",
@@ -372,13 +269,6 @@ gbif_final<-
 
 gbif_final%>%
   rgl::plot3d(x = .$x,y = .$y,z = .$z,colour = .$species_stand)
-
-# htmlwidgets::saveWidget(rglwidget(width = 520, height = 520), 
-#                         file = here("3dscatter.html"),
-#                         libdir = "libs",
-#                         selfcontained = FALSE
-# )
-
 
 library(RANN)
 # This algorithm uses euclidean distance which may be inaccurate but I'll leave it as is for now...
@@ -395,12 +285,13 @@ for (i in seq_len(nrow(gbif_final))) {
     if (nrow(subset_df) == 0) next
     
     coords <- subset_df %>%
-      select(decimalLongitude, decimalLatitude) %>%
+      select(x, y, z) %>%
       as.matrix()
     
     
-    query <- matrix(c(gbif_final$decimalLongitude[i],
-                      gbif_final$decimalLatitude[i]),
+    query <- matrix(c(gbif_final$x[i],
+                      gbif_final$y[i],
+                      gbif_final$z[i]),
                     nrow = 1)
     
     nn <- nn2(data = coords, query = query, k = 1)
@@ -413,13 +304,56 @@ for (i in seq_len(nrow(gbif_final))) {
   }
 }
 
+## -------------------------
+
+library(dplyr)
+library(purrr)
+library(furrr)
+library(RANN)
+
+plan(multisession)  # or multicore on Linux/macOS
+
+process_species <- function(df) {
+  
+  known <- df %>% filter(!is.na(nativeness))
+  unknown_idx <- which(is.na(df$nativeness))
+  
+  if (nrow(known) == 0 || length(unknown_idx) == 0) {
+    df$nn_nativeness <- NA
+    df$nn_dist <- NA_real_
+    return(df)
+  }
+  
+  # matrices
+  data_mat <- as.matrix(known[, c("x", "y", "z")])
+  query_mat <- as.matrix(df[unknown_idx, c("x", "y", "z")])
+  
+  nn <- nn2(data = data_mat, query = query_mat, k = 1)
+  
+  # initialise
+  df$nn_nativeness <- NA
+  df$nn_dist <- NA_real_
+  
+  # assign results
+  df$nn_nativeness[unknown_idx] <- known$nativeness[nn$nn.idx]
+  df$nn_dist[unknown_idx] <- nn$nn.dists
+  
+  df
+}
+
+result <- gbif_final %>%
+  group_split(species_stand) %>%
+  future_map_dfr(process_species)
+
+## ------------------------
+
 # gbif_final%>%
 #   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)
 
 
 ## Plotting records of different species ####
 
-species_list<-gbif_final%>%
+species_list<-result%>%
   group_by(species_stand)%>%
   summarise(n = length(species_stand))
 
@@ -429,11 +363,12 @@ for(i in 1:length(species_list$species_stand)){
   
   plot<-
     ggplot()+
-    geom_sf(data = country_shapefiles)+
-    geom_sf(data = gbif_final%>%
+    annotation_borders()+
+    #geom_sf(data = country_shapefiles)+
+    geom_sf(data = result%>%
               mutate(nativeness = ifelse(!is.na(nativeness),nativeness,nn_nativeness))%>%
               mutate(nativeness = ifelse(nativeness == 0,"unknown",nativeness))%>%
-              filter(nn_dist<10,
+              filter(#nn_dist<10,
                      species_stand == species_list$species_stand[i])%>%
               st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326),
             aes(colour = nativeness))+
@@ -444,27 +379,31 @@ for(i in 1:length(species_list$species_stand)){
 }
 
 ggplot()+
-  geom_sf(data = country_shapefiles)+
-  geom_sf(data = gbif_final%>%
+  #geom_sf(data = country_shapefiles)+
+  annotation_borders()+
+  geom_sf(data = result%>%
             mutate(nativeness = ifelse(!is.na(nativeness),nativeness,nn_nativeness))%>%
-            mutate(nativeness = ifelse(nativeness == 0 | nn_dist>20,"unknown",nativeness))%>%
+            mutate(nativeness = ifelse(nativeness == 0 ,"unknown",nativeness))%>%
             st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326),
           aes(colour = nativeness))
 
-m <- runif(6,0,139)%>%round()
+library(patchwork)
+
+results[[runif(1,1,151)]]+
+  theme(legend.position = "none")+
+  results[[runif(1,1,151)]]+
+  theme(legend.position = "none")+
+  results[[runif(1,1,151)]]+
+  theme(legend.position = "none")+
+  results[[runif(1,1,151)]]+
+  theme(legend.position = "none")+
+  results[[runif(1,1,151)]]+
+  theme(legend.position = "none")+
+  results[[runif(1,1,151)]]+
+  theme(legend.position = "none")
 
 
-plots_random<-list()
 
-for (j in 1:6) {
-
-  plots_random[[j]]<-results[[m[[j]]]]
-
-}
-
-plots_random[[2]]
-
-plots_random[1:6]
 
 
 
