@@ -12,6 +12,7 @@ library(CoordinateCleaner)
 library(conflicted)
 library(patchwork)
 library(here)
+library(RANN)
 
 source(here("rscripts/Cotoneaster review functions.R"))
 
@@ -105,17 +106,7 @@ gbif<-
 
 # Visualising all the removed records #####
 
-gbif%>%
-  filter(!.summary)%>%
-  ggplot(aes(decimalLongitude,decimalLatitude))+
-  annotation_borders()+
-  geom_point()+
 
-gbif%>%
-  filter(.summary)%>%
-  ggplot(aes(decimalLongitude,decimalLatitude))+
-  annotation_borders()+
-  geom_point()
 
 # Cleaned the coordinates, refer to citation for details
 # citation("CoordinateCleaner")
@@ -215,10 +206,11 @@ gbif_geo<-
 
 ## Final_products ##############################################################
 
-gbif_final<-
+#gbif_final<-
   gbif_geo%>%
+    
   mutate(tdwg3 = LEVEL3_COD)%>%
-  #left_join(GloNAF_contoneaster%>%select(status,tdwg3,taxon_stand))%>%
+    
   left_join(glonaf_taxon_x_region%>%
               group_by(status,tdwg3,taxa_accepted)%>%
               summarise(obs = length(status))%>%
@@ -227,7 +219,6 @@ gbif_final<-
               filter(!(status == "Naturalized" & "Invasive" %in% status))%>%
               rename(wcvp_accepted_name = taxa_accepted)%>%
               ungroup())%>%
-              #unique())#%>%
   left_join(wcvp_native%>%
               mutate(plant_name_id_stand = accepted_plant_name_id,
                      tdwg3 = area_code_l3)%>%
@@ -236,9 +227,8 @@ gbif_final<-
               unique())%>%
   mutate(glonaf_status = status,
          wcvp_status = case_when(introduced == 1 ~ "introduced",
-                                 #is.na(introduced) ~ "likely_introduced",
                                  introduced == 0 & taxonRank != "GENUS" ~ "native",
-                                 
+                                 introduced == 0 & taxonRank == "GENUS" ~ "native",
                                  #taxonRank == "GENUS" ~ NA,
                                  TRUE ~ NA))%>%
   select(-status,-introduced,-taxon_stand,-obs)%>%
@@ -266,11 +256,11 @@ gbif_final<-
          z = sphere(lat = decimalLatitude,lon = decimalLongitude)[[3]])  
 
 
+# 
+# gbif_final%>%
+#   rgl::plot3d(x = .$x,y = .$y,z = .$z,colour = .$species_stand)
 
-gbif_final%>%
-  rgl::plot3d(x = .$x,y = .$y,z = .$z,colour = .$species_stand)
 
-library(RANN)
 # This algorithm uses euclidean distance which may be inaccurate but I'll leave it as is for now...
 
 
@@ -288,7 +278,6 @@ for (i in seq_len(nrow(gbif_final))) {
       select(x, y, z) %>%
       as.matrix()
     
-    
     query <- matrix(c(gbif_final$x[i],
                       gbif_final$y[i],
                       gbif_final$z[i]),
@@ -304,51 +293,6 @@ for (i in seq_len(nrow(gbif_final))) {
   }
 }
 
-## -------------------------
-
-library(dplyr)
-library(purrr)
-library(furrr)
-library(RANN)
-
-plan(multisession)  # or multicore on Linux/macOS
-
-process_species <- function(df) {
-  
-  known <- df %>% filter(!is.na(nativeness))
-  unknown_idx <- which(is.na(df$nativeness))
-  
-  if (nrow(known) == 0 || length(unknown_idx) == 0) {
-    df$nn_nativeness <- NA
-    df$nn_dist <- NA_real_
-    return(df)
-  }
-  
-  # matrices
-  data_mat <- as.matrix(known[, c("x", "y", "z")])
-  query_mat <- as.matrix(df[unknown_idx, c("x", "y", "z")])
-  
-  nn <- nn2(data = data_mat, query = query_mat, k = 1)
-  
-  # initialise
-  df$nn_nativeness <- NA
-  df$nn_dist <- NA_real_
-  
-  # assign results
-  df$nn_nativeness[unknown_idx] <- known$nativeness[nn$nn.idx]
-  df$nn_dist[unknown_idx] <- nn$nn.dists
-  
-  df
-}
-
-result <- gbif_final %>%
-  group_split(species_stand) %>%
-  future_map_dfr(process_species)
-
-## ------------------------
-
-# gbif_final%>%
-#   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)
 
 
 ## Plotting records of different species ####
@@ -429,25 +373,4 @@ final_spreadsheet<-
 #write.csv2(st_drop_geometry(final_spreadsheet),"Cotoneaster review output/Final summary spreadsheet_050225.csv")
 #write.csv2(st_drop_geometry(gbif_final),"Cotoneaster review output/Final gbif records_050225.csv")
 # write.csv2(translation_table,"translation_table.csv")
-
-
-
-## Check the distributions for a few species ########
-
-# r<-wcvp_distribution(taxon = "Cotoneaster washanensis",
-#                      introduced = F)
-# wcvp_distribution_map(r)
-# view(r)
-# 
-# 
-# gbif_final%>%
-#   filter(wcvp_accepted_name == "Cotoneaster horizontalis")%>%
-#   st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
-#   ggplot()+
-#   geom_sf(data = country_shapefiles,fill = "white")+
-#   geom_sf(aes(colour = glonaf_status,shape = wcvp_status))
-# 
-# 
-# 
-# get_wgsrpd3_codes("Russia")
 
