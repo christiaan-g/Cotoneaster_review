@@ -1,3 +1,13 @@
+#Overview
+
+# This R script was made for assessing the Cotoneaster data
+
+# Note: does need an internet connection, some of the packages like CoordinateCleaner and 
+# rWCVP require connection to the internet though it does not consume a lot of data
+
+
+
+
 ############################ SETUP #############################################
 
 rm(list = ls())
@@ -9,10 +19,9 @@ library(rWCVP)
 #install.packages("rWCVPdata", repos=c("https://matildabrown.github.io/drat", "https://cloud.r-project.org"))
 library(rWCVPdata)
 library(CoordinateCleaner)
-library(conflicted)
-library(patchwork)
 library(here)
 library(RANN)
+library(conflicted)
 
 source(here("rscripts/Cotoneaster review functions.R"))
 source(here("rscripts/nn_dist_to_arc.R"))
@@ -81,7 +90,7 @@ glonaf_taxon_x_region<-
 wcvp_native<-
   wcvp_names%>%
   filter(genus == "Cotoneaster")%>%
-  left_join(wcvp_distributions)#%>%view()
+  left_join(wcvp_distributions)
 
 
 
@@ -98,10 +107,12 @@ gbif_clean<-
          decimalLatitude,decimalLongitude,
          day,month,year,
          establishmentMeans
-  )%>%
-  clean_coordinates()%>%
-  filter(.summary)%>%
-  select(-(.val:.summary))
+  )#%>%
+  #clean_coordinates(
+  #  tests = c("capitals", "centroids", "equal", "gbif", "institutions", "seas", "zeros")
+  #)%>%
+  #filter(.summary)%>%
+  #select(-(.val:.summary))
 
 
 
@@ -164,7 +175,7 @@ gbif_geo<-
   
   
   
-######################### MAKE GBIF INTO SHAPEFILE ##############################
+  ######################### MAKE GBIF INTO SHAPEFILE ##############################
 
 
 st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
@@ -207,64 +218,75 @@ gbif_final<-
   rename(decimalLongitude = X,
          decimalLatitude = Y)%>%
   filter(!is.na(wcvp_accepted_name),
-         startsWith(wcvp_accepted_name,"Cotoneaster"))%>%
+         startsWith(wcvp_accepted_name,"Cotoneaster")) %>%
   
   
   
   
   
-########################  ALLOCATING NATIVENESS  ###############################
+  ########################  ALLOCATING NATIVENESS  ###############################
 
 
-  mutate(nativeness = case_when((glonaf_status == "Naturalized"|
-                                 glonaf_status == "Invasive") &
-                                (wcvp_status == "introduced") ~ "non-native",
-                              is.na(glonaf_status) & wcvp_status == "native" ~ "native",
-                              is.na(glonaf_status) & wcvp_status == "introduced"~ "non-native"))%>%
+mutate(nativeness = case_when(
+  
+  wcvp_status == "native" & is.na(glonaf_status) ~ "native",
+  
+  (wcvp_status == "introduced" | is.na(wcvp_status)) & !is.na(glonaf_status) ~ "non-native",
+  
+  wcvp_status == "native" & !is.na(glonaf_status) ~ "disputed"#,
+  
+  #establishmentMeans == "native" ~ "native",
+  
+  #establishmentMeans %in% c("introduced","vagrant","introducedAssistedColonisation") ~ "non-native"
+  
+))%>%
   mutate(nn_nativeness = NA,
          nn_id = NA,
          nn_dist = NA)%>%
   mutate(x = sphere(lat = decimalLatitude,lon = decimalLongitude)[[1]],
          y = sphere(lat = decimalLatitude,lon = decimalLongitude)[[2]],
-         z = sphere(lat = decimalLatitude,lon = decimalLongitude)[[3]])  
-
-
-
-
-# This algorithm from the RANN package uses euclidean distance, therefore coordinates are transformed into 3d coordinates and distances are then back-transformed using arc_distance
-
-for (i in seq_len(nrow(gbif_final))) {
+         z = sphere(lat = decimalLatitude,lon = decimalLongitude)[[3]]) %>%
   
-  if (is.na(gbif_final$nativeness[i])) {
+  
+  
+  
+  # This algorithm from the RANN package uses euclidean distance, therefore coordinates are transformed into 3d coordinates and distances are then back-transformed using arc_distance
+  
+  
+  group_by(wcvp_accepted_name) %>%
+  group_modify(~{
     
-    subset_df <- gbif_final %>%
-      filter(!is.na(nativeness),
-             species_stand == gbif_final$species_stand[i])
+    known <- .x %>% filter(!is.na(nativeness))
+    unknown <- .x %>% filter(is.na(nativeness))
     
-    if (nrow(subset_df) == 0) next
+    if (nrow(known) == 0 | nrow(unknown) == 0) {
+      return(.x)
+    }
     
-    coords <- subset_df %>%
-      select(x, y, z) %>%
-      as.matrix()
+    coords_known <- known %>% select(x, y, z) %>% as.matrix()
+    coords_unknown <- unknown %>% select(x, y, z) %>% as.matrix()
     
-    query <- matrix(c(gbif_final$x[i],
-                      gbif_final$y[i],
-                      gbif_final$z[i]),
-                    nrow = 1)
+    nn <- nn2(data = coords_known,
+              query = coords_unknown,
+              k = 1)
     
-    nn <- nn2(data = coords, query = query, k = 1)
+    unknown$nn_nativeness <- known$nativeness[nn$nn.idx[,1]]
+    unknown$nn_id <- known$gbifID[nn$nn.idx[,1]] # nn$nn.idx[,1]
+    unknown$nn_dist <- nn_dist_to_arc(nn$nn.dists[,1])
     
-    nearest_point <- subset_df[nn$nn.idx, ]
-    
-    gbif_final$nn_nativeness[i] <- nearest_point$nativeness
-    gbif_final$nn_id[i] <- nn$nn.idx
-    gbif_final$nn_dist[i] <- nn_dist_to_arc(nn$nn.dists)
-  }
-}
+    bind_rows(known, unknown)
+  }) %>%
+  ungroup()
+
+
+
 
 ############################# EXPORTING ########################################
 
+
 write_csv(gbif_final,here("data","Cotoneaster review output","Final gbif_records_090426.csv"))
+
+
 
 
 
@@ -355,6 +377,35 @@ write_csv(gbif_final,here("data","Cotoneaster review output","Final gbif_records
 #             size = 1)
 # 
 
+# for (i in seq_len(nrow(gbif_final))) {
+#   
+#   if (is.na(gbif_final$nativeness[i])) {
+#     
+#     subset_df <- gbif_final %>%
+#       filter(!is.na(nativeness),
+#              species_stand == gbif_final$species_stand[i])
+#     
+#     if (nrow(subset_df) == 0) next
+#     
+#     coords <- subset_df %>%
+#       select(x, y, z) %>%
+#       as.matrix()
+#     
+#     query <- matrix(c(gbif_final$x[i],
+#                       gbif_final$y[i],
+#                       gbif_final$z[i]),
+#                     nrow = 1)
+#     
+#     nn <- nn2(data = coords, query = query, k = 1)
+#     
+#     nearest_point <- subset_df[nn$nn.idx, ]
+#     
+#     gbif_final$nn_nativeness[i] <- nearest_point$nativeness
+#     gbif_final$nn_id[i] <- nn$nn.idx
+#     gbif_final$nn_dist[i] <- nn_dist_to_arc(nn$nn.dists)
+#   }
+# }
+# 
 
 # gbif_final%>%
 #   rgl::plot3d(x = .$x,y = .$y,z = .$z,colour = .$species_stand)
