@@ -69,3 +69,24 @@ sphere <- function(lat, lon, R = 6371000) {
   
   return(list(x, y, z))
 }
+
+read_glonaf <- function(which) {
+  files <- c(
+    glonaf_flora2 = "data/GloNAF 2024/glonaf_flora2.csv",
+    glonaf_taxon  = "data/GloNAF 2024/glonaf_taxon_wcvp.csv",
+    glonaf_region = "data/GloNAF 2024/glonaf_region.csv"
+  )
+  
+  if (!which %in% names(files)) {
+    stop("Invalid input")
+  }
+  
+  read.csv2(here::here(files[[which]]))
+}
+
+nn_dist_to_arc<-
+  function (x, r = 6371000){
+    d <- acos( 1 - ( (x^2) / ( 2*(r^2)) ) ) *r
+    round(d)
+  }
+
