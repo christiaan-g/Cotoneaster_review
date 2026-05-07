@@ -285,34 +285,3 @@ gbif_final<-
 write_csv(gbif_final,here("data","Cotoneaster review output","Final gbif_records_090426.csv"))
 
 
-########################## CODE GRAVEYARD ######################################
-
-
-# This algorithm from the RANN package uses euclidean distance, therefore coordinates are transformed into 3d coordinates and distances are then back-transformed using arc_distance
-
-
-# group_by(wcvp_accepted_name) %>%
-# group_modify(~{
-# 
-#   known <- .x %>% filter(!is.na(nativeness))
-#   unknown <- .x %>% filter(is.na(nativeness))
-# 
-#   if (nrow(known) == 0 | nrow(unknown) == 0) {
-#     return(.x)
-#   }
-# 
-#   coords_known <- known %>% select(x, y, z) %>% as.matrix()
-#   coords_unknown <- unknown %>% select(x, y, z) %>% as.matrix()
-# 
-#   nn <- nn2(data = coords_known,
-#             query = coords_unknown,
-#             k = 1)
-# 
-#   unknown$nn_nativeness <- known$nativeness[nn$nn.idx[,1]]
-#   unknown$nn_id <- known$gbifID[nn$nn.idx[,1]] # nn$nn.idx[,1]
-#   unknown$nn_dist <- nn_dist_to_arc(nn$nn.dists[,1])
-# 
-#   bind_rows(known, unknown)
-# }) %>%
-# ungroup()
-
