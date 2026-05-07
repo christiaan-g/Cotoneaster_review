@@ -22,7 +22,6 @@ library(RANN)
 library(conflicted)
 
 source(here("rscripts/Cotoneaster review functions.R"))
-#source(here("rscripts/nn_dist_to_arc.R"))
 
 theme_set(theme_classic())
 
@@ -89,38 +88,37 @@ wcvp_native<-
 
 
 
-
-
 ###################### CLEAN GBIF DATA #########################################
 
 
 gbif_clean<-
   gbif_raw%>%
+  mutate(taxon = ifelse(taxonRank == "GENUS",genus,species))%>%
   select(gbifID,
-         genus,species,
+         taxon,
          taxonRank,
          decimalLatitude,decimalLongitude,
          day,month,year,
-         establishmentMeans
-  )#%>%
-#clean_coordinates(
-#  tests = c("capitals", "centroids", "equal", "gbif", "institutions", "seas", "zeros")
-#)%>%
-#filter(.summary)%>%
-#select(-(.val:.summary))
-
-
-
+         establishmentMeans,
+         countryCode
+  )%>%
+  clean_coordinates(
+    countries = "countryCode",
+    species = "taxon",
+    tests = c("capitals", "centroids", "equal", "gbif", "institutions", "seas", "zeros")
+  )%>%
+  filter(.summary)%>%
+  select(-(.val:.summary))
 
 
 ######################### CREATE TRANSLATION TABLE #############################
 
 
 translation_table<-
+  
   gbif_clean%>%
-  mutate(taxon = ifelse(taxonRank == "GENUS",genus,species))%>%
   group_by(taxon)%>%
-  summarise(num_recs = length(species))%>%
+  summarise(num_recs = length(taxon))%>%
   
   wcvp_match_names(.,
                    name_col="taxon",
@@ -130,30 +128,32 @@ translation_table<-
   
   multi_correct()%>%
   
-  mutate(plant_name_id = wcvp_accepted_id)%>%
-  left_join(wcvp_names%>%
-              select(genus,species,taxon_name, taxon_authors,plant_name_id))%>%
+  filter(match_similarity > 0.9)%>%
   
-  select(-plant_name_id)%>%
+  mutate(wcvp_accepted_id = ifelse(!is.na(wcvp_accepted_id),wcvp_accepted_id,wcvp_id))%>%
+  
+  left_join(wcvp_names%>%
+              select(genus,species,taxon_name, taxon_authors,plant_name_id)%>%
+              rename(wcvp_accepted_id = plant_name_id))%>%
+  
   rename(wcvp_accepted_name = taxon_name)%>%
+  # 
+  group_by(taxon)%>%
   
   filter(multi_correct == "keeper" | multi_correct == "keeper_checked")%>%
-  select(taxon,num_recs,wcvp_accepted_id,wcvp_accepted_name,genus,species,taxon_authors)%>%
+  #select(taxon,num_recs,wcvp_accepted_id,wcvp_accepted_name,genus,species,taxon_authors,wcvp_status)%>%
   
-  rename(taxon_stand = taxon,
-         num_recs_stand = num_recs,
-         plant_name_id_stand = wcvp_accepted_id,
-         genus_stand = genus,
-         species_stand = species,
-         authors_stand = taxon_authors)%>%
+  rename(wcvp_species = species,
+         wcvp_genus = genus)%>%
   filter(!is.na(wcvp_accepted_name))%>%
+  ungroup()%>%
   distinct()
 
 # any names not in the translation table will be removed from further analysis
 
 
 # Checks that every entry in the translation table is unique
-length(unique(translation_table$taxon_stand)) == nrow(translation_table)
+length(unique(translation_table$taxon)) == nrow(translation_table)
 
 
 ######################## CREATE SHAPEFILES ####################################
@@ -162,17 +162,21 @@ length(unique(translation_table$taxon_stand)) == nrow(translation_table)
 
 wcvp_glonaf_sf<-
   right_join(country_shapefiles%>%mutate(tdwg3 = LEVEL3_COD),
+             
              full_join(glonaf_taxon_x_region%>%
                          select(status,accepted_plant_name_id,tdwg3)%>%
                          unique(),
+                       
                        wcvp_native%>%
                          filter(taxon_name %in% translation_table$wcvp_accepted_name)%>%
                          select(accepted_plant_name_id,
                                 area_code_l3,
                                 introduced)%>%
+                         
                          unique(),
-                       by = join_by(tdwg3 == area_code_l3,accepted_plant_name_id)
-             )%>%
+                       by = join_by(tdwg3 == area_code_l3,accepted_plant_name_id))%>%
+               
+               
                mutate(glonaf_status = status,
                       wcvp_status = case_when(introduced == 1 ~ "introduced",
                                               introduced == 0 ~ "native",
@@ -184,17 +188,16 @@ wcvp_glonaf_sf<-
                select(accepted_plant_name_id,tdwg3,glonaf_status,wcvp_status,nativeness)%>%
                
                left_join(translation_table%>%
-                           select(plant_name_id_stand,wcvp_accepted_name)%>%unique(),
-                         by = join_by(accepted_plant_name_id == plant_name_id_stand))
+                           select(wcvp_accepted_id,wcvp_accepted_name)%>%
+                           unique(),
+                         by = join_by(accepted_plant_name_id==wcvp_accepted_id))
   )
-
-
 
 
 #plotting some example data
 
 wcvp_glonaf_sf%>%
-  filter(wcvp_accepted_name == "Cotoneaster nebrodensis")%>%
+  filter(wcvp_accepted_name == "Cotoneaster pannosus")%>%
   ggplot()+
   geom_sf(data = rWCVPdata::coast)+
   geom_sf(aes(fill = nativeness))+
@@ -209,11 +212,8 @@ wcvp_glonaf_sf%>%
 
 gbif_geo<-
   gbif_clean%>%
-  mutate(taxon_stand = ifelse(taxonRank == "GENUS",genus,species))%>%
+  #mutate(taxon_stand = ifelse(taxonRank == "GENUS",genus,species))%>%
   left_join(translation_table)%>%
-  
-  
-  
   
   
   ######################### MAKE GBIF INTO SHAPEFILE ##############################
@@ -221,11 +221,7 @@ gbif_geo<-
 
 st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
   st_join(country_shapefiles) %>%
-  filter(!is.na(LEVEL3_COD)) %>%
-  mutate(accepted_plant_name_id = plant_name_id_stand)
-
-
-
+  filter(!is.na(LEVEL3_COD))
 
 
 ############################ FINAL PRODUCTS ####################################
@@ -234,7 +230,8 @@ st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326)%>%
 gbif_final<-
   gbif_geo%>%
   
-  mutate(tdwg3 = LEVEL3_COD)%>%
+  mutate(tdwg3 = LEVEL3_COD,
+         accepted_plant_name_id = wcvp_accepted_id)%>%
   
   left_join(st_drop_geometry(wcvp_glonaf_sf)%>%
               select(accepted_plant_name_id,tdwg3,#glonaf_status, wcvp_status,
@@ -280,92 +277,15 @@ gbif_final<-
   
   st_drop_geometry()%>%
   units::drop_units()
-  
-
-#############
 
 
-class(gbif_final)
-  
-ggplot()+
-  geom_sf(data = gbif_final)#+
-  annotation_borders()
+############################# EXPORTING ########################################
 
 
-# group_by(wcvp_accepted_name) %>%
-#   group_modify(~{
-# 
-#     known <- .x %>% filter(!is.na(nativeness))
-#     unknown <- .x %>% filter(is.na(nativeness)) 
-#     
-#     if (nrow(unknown) == 0) return(.x)
-#     
-#     candidates <- wcvp_glonaf_sf %>%
-#       filter(wcvp_accepted_name == unique(.x$wcvp_accepted_name))
-#     
-#     if (nrow(candidates) == 0) return(.x)
-#     
-#     
-#     indexes<-st_nearest_feature(unknown,candidates)
-#     dists <- st_distance(unknown, candidates[indexes, ], by_element = TRUE)
-#     nn_nativeness <- candidates$nativeness[indexes]
-#     
-#     
-#     unknown$nn_nativeness <- nn_nativeness
-#     unknown$nn_id <- indexes
-#     unknown$nn_dist <- dists
-#     
-#     bind_rows(known, unknown)
-#     
-#   }) %>%
-#   ungroup()
-
-################
+write_csv(gbif_final,here("data","Cotoneaster review output","Final gbif_records_090426.csv"))
 
 
-
-
-# 
-# mutate(glonaf_status = status,
-#        wcvp_status = case_when(introduced == 1 ~ "introduced",
-#                                introduced == 0 ~ "native",
-#                                TRUE ~ NA))%>%
-# select(-status,-introduced,-taxon_stand,-obs)%>%
-# cbind(st_coordinates(.))%>%
-# st_drop_geometry()%>%
-# rename(decimalLongitude = X,
-#        decimalLatitude = Y)%>%
-# filter(!is.na(wcvp_accepted_name),
-#        startsWith(wcvp_accepted_name,"Cotoneaster")) %>%
-
-
-
-
-
-########################  ALLOCATING NATIVENESS  ###############################
-
-
-# mutate(nativeness = case_when(
-#   
-#   wcvp_status == "native" & is.na(glonaf_status) ~ "native",
-#   
-#   (wcvp_status == "introduced" | is.na(wcvp_status)) & !is.na(glonaf_status) ~ "non-native",
-#   
-#   wcvp_status == "native" & !is.na(glonaf_status) ~ "disputed"#,
-#   
-#   #establishmentMeans == "native" ~ "native",
-#   
-#   #establishmentMeans %in% c("introduced","vagrant","introducedAssistedColonisation") ~ "non-native"
-#   
-# ))%>%
-# mutate(nn_nativeness = NA,
-#        nn_id = NA,
-#        nn_dist = NA)%>%
-# mutate(x = sphere(lat = decimalLatitude,lon = decimalLongitude)[[1]],
-#        y = sphere(lat = decimalLatitude,lon = decimalLongitude)[[2]],
-#        z = sphere(lat = decimalLatitude,lon = decimalLongitude)[[3]]) %>%
-
-
+########################## CODE GRAVEYARD ######################################
 
 
 # This algorithm from the RANN package uses euclidean distance, therefore coordinates are transformed into 3d coordinates and distances are then back-transformed using arc_distance
@@ -396,134 +316,3 @@ ggplot()+
 # }) %>%
 # ungroup()
 
-
-
-
-############################# EXPORTING ########################################
-
-
-write_csv(gbif_final,here("data","Cotoneaster review output","Final gbif_records_090426.csv"))
-
-#saveRDS(gbif_final,here("data","Cotoneaster review output","Final gbif_records_090426.rds"))
-
-
-
-########################## CODE GRAVEYARD ######################################
-
-
-## Plotting records of different species ####
-
-# species_list<-result%>%
-#   group_by(species_stand)%>%
-#   summarise(n = length(species_stand))
-
-# results<-list()
-
-# for(i in 1:length(species_list$species_stand)){
-#   
-#   plot<-
-#     ggplot()+
-#     annotation_borders()+
-#     #geom_sf(data = country_shapefiles)+
-#     geom_sf(data = result%>%
-#               mutate(nativeness = ifelse(!is.na(nativeness),nativeness,nn_nativeness))%>%
-#               mutate(nativeness = ifelse(nativeness == 0,"unknown",nativeness))%>%
-#               filter(#nn_dist<10,
-#                      species_stand == species_list$species_stand[i])%>%
-#               st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326),
-#             aes(colour = nativeness))+
-#     labs(title = paste("Cotoneaster",species_list$species_stand[i]))
-#   
-#   results[[i]]<-plot
-#   
-# }
-
-# ggplot()+
-#   #geom_sf(data = country_shapefiles)+
-#   annotation_borders()+
-#   geom_sf(data = result%>%
-#             mutate(nativeness = ifelse(!is.na(nativeness),nativeness,nn_nativeness))%>%
-#             mutate(nativeness = ifelse(nativeness == 0 ,"unknown",nativeness))%>%
-#             st_as_sf(coords = c("decimalLongitude","decimalLatitude"),crs = 4326),
-#           aes(colour = nativeness))
-
-
-
-# results[[runif(1,1,151)]]+
-#   theme(legend.position = "none")+
-#   results[[runif(1,1,151)]]+
-#   theme(legend.position = "none")+
-#   results[[runif(1,1,151)]]+
-#   theme(legend.position = "none")+
-#   results[[runif(1,1,151)]]+
-#   theme(legend.position = "none")+
-#   results[[runif(1,1,151)]]+
-#   theme(legend.position = "none")+
-#   results[[runif(1,1,151)]]+
-#   theme(legend.position = "none")
-
-
-
-## Final spreadsheet ###########################################################
-
-
-# final_spreadsheet<-
-#   gbif_final%>%
-#   group_by(wcvp_accepted_name,tdwg3,glonaf_status,wcvp_status)%>%
-#   summarise(earliestYear = custom_min(year),
-#             latestYear = custom_max(year),
-#             obs = length(wcvp_accepted_name))%>%
-#   left_join(country_shapefiles%>%select(LEVEL3_NAM,LEVEL3_COD)%>%
-#               rename(tdwg3 = LEVEL3_COD,
-#                      tdwg3_name = LEVEL3_NAM)%>%
-#               st_drop_geometry())%>%
-#   st_drop_geometry()
-
-
-## Exporting ###################################################################
-
-#write.csv2(st_drop_geometry(final_spreadsheet),"Cotoneaster review output/Final summary spreadsheet_050225.csv")
-#write.csv2(st_drop_geometry(gbif_final),"Cotoneaster review output/Final gbif records_050225.csv")
-# write.csv2(translation_table,"translation_table.csv")
-
-# ggplot(data = gbif_final,aes(wcvp_status,glonaf_status))+ 
-#   geom_count(show.legend = T)+ 
-#   facet_wrap(~wcvp_accepted_name)+
-#   geom_text(aes(label = after_stat(n)),
-#             stat = "sum",
-#             vjust = -0.5,
-#             size = 1)
-# 
-
-# for (i in seq_len(nrow(gbif_final))) {
-#   
-#   if (is.na(gbif_final$nativeness[i])) {
-#     
-#     subset_df <- gbif_final %>%
-#       filter(!is.na(nativeness),
-#              species_stand == gbif_final$species_stand[i])
-#     
-#     if (nrow(subset_df) == 0) next
-#     
-#     coords <- subset_df %>%
-#       select(x, y, z) %>%
-#       as.matrix()
-#     
-#     query <- matrix(c(gbif_final$x[i],
-#                       gbif_final$y[i],
-#                       gbif_final$z[i]),
-#                     nrow = 1)
-#     
-#     nn <- nn2(data = coords, query = query, k = 1)
-#     
-#     nearest_point <- subset_df[nn$nn.idx, ]
-#     
-#     gbif_final$nn_nativeness[i] <- nearest_point$nativeness
-#     gbif_final$nn_id[i] <- nn$nn.idx
-#     gbif_final$nn_dist[i] <- nn_dist_to_arc(nn$nn.dists)
-#   }
-# }
-# 
-
-# gbif_final%>%
-#   rgl::plot3d(x = .$x,y = .$y,z = .$z,colour = .$species_stand)
