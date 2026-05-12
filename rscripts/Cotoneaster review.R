@@ -181,9 +181,10 @@ wcvp_glonaf_sf<-
                       wcvp_status = case_when(introduced == 1 ~ "introduced",
                                               introduced == 0 ~ "native",
                                               TRUE ~ NA),
-                      nativeness = case_when(wcvp_status == "native" & is.na(glonaf_status) ~ "native",
-                                             wcvp_status == "introduced" | !is.na(glonaf_status) ~ "nonnative",
-                                             wcvp_status == "native" & !is.na(glonaf_status) ~ "disputed"))%>%
+                      nativeness = case_when(wcvp_status == "native" & !is.na(glonaf_status) ~ "disputed",
+                                             wcvp_status == "native" & is.na(glonaf_status) ~ "native",
+                                             wcvp_status == "introduced" | !is.na(glonaf_status) ~ "nonnative"
+                      ))%>%
                
                select(accepted_plant_name_id,tdwg3,glonaf_status,wcvp_status,nativeness)%>%
                
