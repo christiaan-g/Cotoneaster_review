@@ -28,10 +28,7 @@ set_theme(theme_classic()#+
 
 ```
 
-
 ## Outline
-
-
 
 ```{r}
 #dat<-readRDS(here("data","Cotoneaster review output","Final gbif_records_090426.rds"))
@@ -41,7 +38,6 @@ country_shapefiles<-wgsrpd3%>%
 
 dat<-read_csv(here("data","Cotoneaster review output","Final gbif_records_090426.csv"))
 ```
-
 
 ## Part 1: Assign nativeness based on distances
 
@@ -58,13 +54,14 @@ dat_nn<-
 
 ```
 
-
-Let's look at an example *C. horizontalis*. In the map below you can see the main problem. When you cross-reference the GBIF data with GloNAF and the WCVP you get the following map. As you can see, we are able to successfully assign a lot of records as native and non-native. However, there are also a lot of NA's where neither GloNAF of the WCVP gives any information.  
+Let's look at an example *C. horizontalis*. In the map below you can see the main problem. When you cross-reference the GBIF data with GloNAF and the WCVP you get the following map. As you can see, we are able to successfully assign a lot of records as native and non-native. However, there are also a lot of NA's where neither GloNAF of the WCVP gives any information.
 
 ```{r}
+test_name<-"Cotoneaster integerrimus"
+
 (
   dat%>%
-    filter(wcvp_accepted_name == "Cotoneaster horizontalis")%>%
+    filter(wcvp_accepted_name == test_name)%>%
     ggplot()+
     annotation_borders()+
     geom_point(aes(longitude,latitude,colour = nativeness))+
@@ -73,7 +70,7 @@ Let's look at an example *C. horizontalis*. In the map below you can see the mai
 )+
   (
     dat_nn%>%
-      filter(wcvp_accepted_name == "Cotoneaster horizontalis")%>%
+      filter(wcvp_accepted_name == test_name)%>%
       ggplot()+
       annotation_borders()+
       geom_point(aes(longitude,latitude,colour = nativeness))+
@@ -89,7 +86,6 @@ Let's look at an example *C. horizontalis*. In the map below you can see the mai
   labs(y = NULL,
        x = NULL)
 ```
-
 
 ```{r}
 dat%>%
@@ -107,18 +103,15 @@ dat%>%
   ylab("Number of records")
 ```
 
-
 ```{r}
 dat_geo<-
   dat%>%
   st_as_sf(coords = c("longitude","latitude"),crs = 4326)
 ```
 
-
 ```{r}
 world <- rnaturalearth::ne_countries(returnclass = "sf",scale = "small")
 ```
-
 
 ```{r}
 ggplot(dat_geo)+
@@ -128,9 +121,7 @@ ggplot(dat_geo)+
   theme(legend.position = "none")
 ```
 
-
 ## Part 2: Graph number of native and non-native species per country
-
 
 ```{r}
 dat_numbers<-
@@ -148,8 +139,6 @@ left_join(country_shapefiles,
           by = join_by(LEVEL3_COD==tdwg3))
 
 ```
-
-
 
 ```{r,fig.height=8,fig.width=5,dpi=310}
 (
@@ -209,7 +198,6 @@ Here I attempt to calculate range sizes using a grid based approach.
 
 Since, grid-based range size estimation is highly sensitive to sampling bias, I first need to test for the ideal resolution to use.
 
-
 ```{r,make and visualise grid cells}
 make_grids<-
   function(){
@@ -233,15 +221,13 @@ grids[[1]]%>%
   theme_minimal()
 ```
 
-
+12 309 km<sup>2</sup>
 
 ```{r}
 # Create dataset with number of polygons and area of polygons for each species
 
 test<-
-  
-  
-  grids[[10]]%>%
+  grids[[1]]%>%
   sf::st_as_sf()%>%
   st_join(
     dat_nn%>%
@@ -253,95 +239,54 @@ test<-
   mutate(n_polys = lengths(x)
          ,area = st_area(x)
          )%>%
+  ungroup()%>%
   st_drop_geometry()%>%
-  units::drop_units()
+  units::drop_units()%>%
+  mutate(area = area/min(area))
 
 
 range_sizes<-expand.grid(
   nativeness = c("native","nonnative"),
   wcvp_accepted_name = unique(dat_nn$wcvp_accepted_name)
 )%>%
-  left_join(test)
-
-
-# %>%
-#   select(-n_polys)%>%
-#   pivot_wider(names_from = "nativeness",values_from = "area")%>%
-#   mutate(across(native:nonnative,~ifelse(is.na(.),0,.)))%>%
-#   mutate(log_native = log1p(native),
-#          log_nonnative = log1p(nonnative))%>%
-#   ggplot(aes(native,nonnative))+
-#   geom_point()+
-#   geom_smooth(method = "lm")+
-#   scale_x_log10(na.value=0)+
-#   scale_y_log10(na.value=0)
-
-
-# expand.grid(
-#   nativeness = c("native","nonnative"),
-#   wcvp_accepted_name = unique(dat_nn$wcvp_accepted_name)
-# )%>%
-#   left_join(test)%>%
-#   select(-area)%>%
-#   pivot_wider(names_from = "nativeness",values_from = "n_polys")%>%
-#   mutate(across(native:nonnative,~ifelse(is.na(.),0,.)))%>%
-#   mutate(log_native = log1p(native),
-#          log_nonnative = log1p(nonnative))%>%
-#   ggplot(aes(native,nonnative))+
-#   geom_point()+
-#   geom_smooth(method = "glm",
-#               method.args = list(family = "poisson"))+
-#   scale_x_log10(na.value = 0)
-
+  left_join(test)%>%
+  filter(!is.na(wcvp_accepted_name),
+         !wcvp_accepted_name %in% c("Cotoneaster parneyi","Cotoneaster × amphigenus","Cotoneaster × intermedius"))%>%
+  mutate(across(n_polys:area,~ifelse(is.na(.),0,.)))
 
 ```
 
-
+## Part 3b: Modelling the range sizes
 
 ```{r}
-#library(sf)
-#library(dplyr)
-library(purrr)
-library(units)
+aoo<-range_sizes%>%
+  select(-n_polys)%>%
+  pivot_wider(names_from = "nativeness",values_from = "area")%>%
+  mutate(lognative = ifelse(native == 0,0,log(native)),
+         lognonnative = ifelse(nonnative == 0,0,log(nonnative)))
+  
+ggplot(aoo)+
+  geom_point(aes(native,nonnative))
 
-results <- map2_dfr(
-  grids,
-  seq_along(grids), #names(grids)
-  ~{
-    
-    .x %>%
-      st_as_sf() %>%
-      st_join(
-        dat_nn %>%
-          st_as_sf(
-            coords = c("longitude", "latitude"),
-            crs = 4326
-          )
-      ) %>%
-      filter(!is.na(wcvp_accepted_name)) %>%
-      group_by(wcvp_accepted_name, nativeness) %>%
-      summarise() %>%
-      mutate(
-        n_polys = lengths(x),
-        area = st_area(x),
-        resolution = .y
-      ) %>%
-      st_drop_geometry() %>%
-      drop_units()
-  }
-)
-
-1
-```
+ggplot(aoo)+
+  geom_point(aes(lognative,lognonnative))
 
 
-```{r,fig.height=10,fig.width=10}
+library(glmmTMB)
 
-results%>%
-  filter(nativeness!="disputed")%>%
-  ggplot(aes(resolution,area,colour = nativeness))+
-  geom_line()+
-  facet_wrap(~wcvp_accepted_name)
+fit<-glmmTMB(formula = lognonnative ~ lognative,
+             data = aoo,
+             family = gaussian(),
+             ziformula = ~lognative)
+
+performance::check_model(fit)
+
+marginaleffects::plot_predictions(fit,condition = "lognative",type = "response",vcov = T, points = 0.5)
+marginaleffects::plot_predictions(fit,condition = "lognative",type = "conditional",vcov = T, points = 0.5)
+marginaleffects::plot_predictions(fit,condition = "lognative",type = "zprob",vcov = T)
+
+
+fit
 
 ```
 
@@ -353,7 +298,6 @@ results%>%
 traits<-read_delim(here("data","49000.txt"),
            delim = "\t" )#%>%view()
 ```
-
 
 ```{r}
 traits%>%
@@ -382,8 +326,8 @@ traits%>%
 library(MASS)
 
 fit.gamma <- fitdistr((traits%>%
-  filter(TraitName == "Seed dry mass",
-         StdValue<100))$StdValue, "gamma")
+                         filter(TraitName == "Seed dry mass",
+                                StdValue<100))$StdValue, "gamma")
 
 traits%>%
   filter(TraitName == "Seed dry mass",
@@ -417,8 +361,6 @@ traits%>%
     ),
     colour = "red"
   )
-
-
 ```
 
 ```{r}
@@ -429,21 +371,13 @@ traits%>%
   summarise(n = length(TraitName))#%>%view()
 ```
 
-
 ## Part 5: Model trait data with native and non-native range sizes
 
-
-
-
-
-
 ## Supplementary plots
-
 
 **Plotting each species**
 
 ```{r}
-
 species_list<-dat_nn%>%
   group_by(wcvp_species)%>%
   summarise(n = length(wcvp_species))%>%
@@ -471,16 +405,6 @@ for(i in 1:length(species_list$wcvp_species)){
 }
 ```
 
-
-
 ```{r echo=FALSE, paged.print=TRUE}
 results
 ```
-
-
-
-
-
-
-
-
