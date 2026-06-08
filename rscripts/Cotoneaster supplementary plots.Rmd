@@ -1,0 +1,70 @@
+---
+title: "Cotoneaster supplementary figures"
+author: "Christiaan Petrus Gildenhuys"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      error = TRUE)
+
+library(tidyverse)
+library(rWCVPdata)
+library(sf)
+library(here)
+library(patchwork)
+```
+
+```{r loading data}
+country_shapefiles<-wgsrpd3%>%
+  st_set_crs(4326)
+
+dat<-read_csv(here("data","Cotoneaster review output","Final gbif_records_090426.csv"))
+```
+
+
+```{r getting distances}
+dist<-1000000 # 1 000 km
+
+dat_nn<-
+  dat%>%
+  mutate(nativeness = case_when(is.na(nativeness) & nn_dist < dist ~ nn_nativeness,
+                                is.na(nativeness) & nn_dist > dist ~ "nonnative",
+                                TRUE ~ nativeness))%>%
+  st_as_sf(coords = c("longitude","latitude"),crs = 4326)
+```
+
+## Supplementary plots
+
+**Plotting each species**
+
+
+```{r generating maps}
+species_list<-dat_nn%>%
+  group_by(wcvp_species)%>%
+  summarise(n = length(wcvp_species))%>%
+  arrange(-n)
+
+results<-list()
+
+for(i in 1:length(species_list$wcvp_species)){
+
+  plot<-
+    ggplot()+
+    annotation_borders()+
+    geom_sf(data = dat_nn %>% filter(wcvp_species == species_list$wcvp_species[i]),
+            aes(colour = nativeness))+
+    labs(title = paste("Cotoneaster",species_list$wcvp_species[i]))+
+    theme_minimal()+
+    theme(legend.position = "inside",
+          legend.position.inside = c(0.1,0.4))
+
+  results[[i]]<-plot
+
+}
+```
+
+```{r plotting maps}
+results[1:140]
+```
