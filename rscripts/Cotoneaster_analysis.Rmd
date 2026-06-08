@@ -2,13 +2,58 @@
 title: "Cotoneaster analysis"
 author: "Christiaan Petrus Gildenhuys"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  html_document: default
+  word_document: default
+bibliography: references.bib
 ---
 
-```{r setup}
-#rm(list = ls())
-knitr::opts_chunk$set(echo = TRUE)
+## Outline
 
+This document reports some analyses conducted for the "Cotoneaster review" paper.
+
+-   Part 1: Assign nativeness based on distances
+-   Part 2: Graph number of native and non-native species per country
+-   Part 3: Calculate native and non-native range sizes per species
+-   Part 4: Explore trait data
+-   Part 5: Model trait data with native and non-native range sizes
+
+## Methods
+
+*Cotoneaster* records were downloaded from the Global Biodiversity Information Facility (GBIF) on 15 May 2026 (https://doi.org/10.15468/dl.gscv7g). Data were loaded into and all subsequent analyses were conducted in R version 4.6.0.
+
+Known non-native ranges were obtained from the Global Naturalised Alien Flora (GloNAF) database version 3 available at <doi:10.5281/zenodo.17105725> [@davis]. Known native ranges were obtained from the World Checklist of Vascular Plants (WCVP) [@wcvp:wo2024] via the \`rWCVPdata\` package [@brown2023].
+
+All range information was standardised according to the World Geographic Scheme for Recording Plant Distributions (WGSRPD) level 3, the "Botanical Country" level [@brummitt2001]. The WGSRPD attempts to supply a standardized set of shape files generally following administrative boundaries to designate global regions for for the classification of range size...
+
+The GBIF records were imported into R and cleaned using the \`coordinateCleaner\` package [@zizka2019]. Records were tested for zeros, seas, institutions, gbif, equal, centroids, and capitals. All flagged records were removed.
+
+All *Cotoneaster* species names (as recorded in GBIF) were matched with the WCVP to standardise nomenclature between the different databases. Where an exact match could not be found, fuzzy matching was employed and the match edit distance (the number of edits that had to be made to the original name to find a match in the WCVP) and the match similarity (the edit distance divided by the number of characters in the name) were calculated. Results of the matching were examined and all species names with a match similarity of less than 0.9 were discarded as these were deemed unreliable. All cases of multiple matches (i.e. when multiple candidate names were found to a single species name in GBIF) were resolved algorithmically.
+
+GBIF records were spatially joined with the GloNAF and WCVP ranges using the \`sf\` package. All records were assigned as "native" (when the record falls within the native range boundaries as recorded by the WCVP), "non-native" (when the record falls within the introduced ranges according to WCVP or in the naturalised or invasive ranges according to GloNAF), "disputed" when it is recorded as native by the WCVP and non-native by GloNAF within the same boundary) and finally *NA* (when the particular species is not recorded as either "native" or "non-native" in the boundary).
+
+Many of these *NA* records occur because these databases are are incomplete or imperfect (i.e. species introduced into an area but not get recorded as introduced or naturalised or a species occurs just outside the biogeographically arbitrary boundaries). To address these data gaps, distance to the nearest shapefile boundary and identity of said boundary (i.e. "native" or "non-native") were calculated for all NA variables.
+
+If the NA record occurred within 100km of the nearest boundary it was assigned the nativeness of that boundary. If the NA record occurred further than 100km away from the nearest boundary it was assumed to have "non-native" status. All species distributions were mapped to check the the assigned nativeness.
+
+Only two species had disputed nativeness, these were inspected and resolved as either "native" or "non-native". We do not claim that the assigned nativeness following this process is necessarily correct but rather a near enough approximation given gaps in the available databases and given certain assumptions for the purposes of this study. With this final dataset we mapped the total number of species, number of native species, and number of non-native species in each botanical country.
+
+Area of occupancy was derived by overlaying a grid of one degree grid cells and calculating the total area (km<sup>2</sup>) for each native and non-native range of each species. The area was normalised by dividing by the lowest area. Area was logged for the purposes of the modelling. When a species did not have a non-native range, the area of occupancy was set to zero.
+
+We fit a hurdle model modelling non-native area of occupancy against the native area of occupancy. Zeros were explicitly modelled and assumed to represent.
+
+Trait data of all Cotoneaster species were obtained from the TRY database on xx April 2026. Information on the available traits is provided in several tables.
+
+```{r setup,echo=FALSE,message=FALSE,warning=FALSE}
+#rm(list = ls())
+knitr::opts_chunk$set(
+	echo = FALSE,
+	fig.height = 5,
+	fig.width = 8,
+	message = FALSE,
+	warning = FALSE,
+	dpi = 300
+)
 library(tidyverse)
 library(sf)
 library(here)
@@ -17,7 +62,11 @@ library(rnaturalearth) # package for getting world maps
 library(flextable)
 library(patchwork)
 
+library(glmmTMB)
+
 library(rWCVP)
+
+source("Cotoneaster review functions.R")
 
 #library(conflicted)
 
@@ -26,11 +75,13 @@ set_theme(theme_classic()#+
           #        legend.position.inside = c(0.2,0.5))
           )
 
+
+
 ```
 
-## Outline
+## 
 
-```{r}
+```{r reading data}
 #dat<-readRDS(here("data","Cotoneaster review output","Final gbif_records_090426.rds"))
 
 country_shapefiles<-wgsrpd3%>%
@@ -43,7 +94,7 @@ dat<-read_csv(here("data","Cotoneaster review output","Final gbif_records_090426
 
 **Plotting the data**
 
-```{r}
+```{r applying nearest neighbour}
 dist<-1000000 # 1 000 km
 
 dat_nn<-
@@ -56,7 +107,7 @@ dat_nn<-
 
 Let's look at an example *C. horizontalis*. In the map below you can see the main problem. When you cross-reference the GBIF data with GloNAF and the WCVP you get the following map. As you can see, we are able to successfully assign a lot of records as native and non-native. However, there are also a lot of NA's where neither GloNAF of the WCVP gives any information.
 
-```{r}
+```{r, mapping case species fig.width=10}
 test_name<-"Cotoneaster integerrimus"
 
 (
@@ -66,8 +117,9 @@ test_name<-"Cotoneaster integerrimus"
     annotation_borders()+
     geom_point(aes(longitude,latitude,colour = nativeness))+
     theme_minimal()+
-    labs(title = "Without nearest neighbour")
-)+
+    labs(title = "Without nearest neighbour")+
+    coord_cartesian(ylim = c(0,80),xlim = c(-170,170))
+)/
   (
     dat_nn%>%
       filter(wcvp_accepted_name == test_name)%>%
@@ -75,27 +127,29 @@ test_name<-"Cotoneaster integerrimus"
       annotation_borders()+
       geom_point(aes(longitude,latitude,colour = nativeness))+
       theme_minimal()+
-      labs(title = "With nearest neighbour")
+      labs(title = "With nearest neighbour")+
+      coord_cartesian(ylim = c(0,80),xlim = c(-170,170))
   )+
   
-  plot_annotation()&
-  theme(#legend.position = "bottom",
+  plot_annotation(tag_levels = "A")&
+  theme(#legend.position = "inside",
+        #legend.position.inside = c(0.95,0.4),
         axis.text.y = element_blank(),
-        axis.text.x = element_blank(),
-        legend.position = c("bottom",NULL))&
+        axis.text.x = element_blank())&
   labs(y = NULL,
-       x = NULL)
+       x = NULL)&
+  colorspace::scale_color_discrete_qualitative(na.value = "grey")&
+  theme_void()
 ```
 
-```{r}
+Figure 1: A shows a map of *Cotoneaster integerrimus* showing records assigned as "native" and "nonnative" according to GloNAF and the WCVP. Records where GloNAF and the WCVP disagree with each other are assigned as "disputed" and records where neither GloNAF nor WCVP assign anything are *NA*. B shows the same map where *NA* values are assigned to the nearest range polygon where the value is less than 100km from the nearest polygon and as "nonnative" when the distance to the nearest polygon exceeds 100km.
+
+```{r plotting distance histogram}
 dat%>%
   mutate(nn_dist = nn_dist/1000)%>%
   filter(nn_dist > 0) %>%
   ggplot()+
   geom_histogram(aes(nn_dist))+
-  #geom_histogram(aes(nn_dist),fill = "green",alpha = 0.5)+
-  #geom_histogram(aes(nn_dist),bins = 50,fill = "blue",alpha = 0.5)+
-  #geom_histogram(aes(nn_dist),bins = 100,fill = "red",alpha = 0.5)+
   scale_x_continuous(transform = "log10", 
                      breaks = c(0.01,0.1,1,10,100,1000,10000,100000),
                      labels = c(0.01,0.1,1,10,100,1000,10000,100000))+
@@ -103,44 +157,49 @@ dat%>%
   ylab("Number of records")
 ```
 
-```{r}
+Figure 2: Histogram showing distances to the nearest polygon for all NA records.
+
+```{r creating shapefiles}
 dat_geo<-
   dat%>%
   st_as_sf(coords = c("longitude","latitude"),crs = 4326)
-```
 
-```{r}
 world <- rnaturalearth::ne_countries(returnclass = "sf",scale = "small")
 ```
 
-```{r}
+
+```{r plotting records}
 ggplot(dat_geo)+
-  geom_sf(data = world)+
-  geom_sf(aes(colour = nativeness))+
+  geom_sf(data = world,fill = "white")+
+  geom_sf(aes(colour = nativeness),size = 0.5)+
   facet_wrap(~nativeness)+
-  theme(legend.position = "none")
+  theme_minimal()+
+  theme(legend.position = "none")+
+  colorspace::scale_color_discrete_qualitative(na.value = "grey")
 ```
+
+Figure 3: Maps showing the total distribution of disputed, native, nonnative and NA records.
 
 ## Part 2: Graph number of native and non-native species per country
 
-```{r}
+```{r praparing to map countries}
 dat_numbers<-
-left_join(country_shapefiles,
-          
-          dat_nn %>%
-            filter(wcvp_accepted_name != "Cotoneaster")%>%
-            group_by(tdwg3) %>%
-            summarise(
-              num_species = n_distinct(wcvp_accepted_name,na.rm = T),
-              num_native = n_distinct(wcvp_accepted_name[nativeness == "native"],na.rm = T),
-              num_nonnative = n_distinct(wcvp_accepted_name[nativeness == "nonnative"],na.rm = T)
-            )%>%
-            mutate(across(num_species:num_nonnative, ~ ifelse(.==0 ,NA,.))),
-          by = join_by(LEVEL3_COD==tdwg3))
+  left_join(country_shapefiles,
+            
+            dat_nn %>%
+              filter(wcvp_accepted_name != "Cotoneaster")%>%
+              group_by(tdwg3) %>%
+              summarise(
+                num_species = n_distinct(wcvp_accepted_name,na.rm = T),
+                num_native = n_distinct(wcvp_accepted_name[nativeness == "native"],na.rm = T),
+                num_nonnative = n_distinct(wcvp_accepted_name[nativeness == "nonnative"],na.rm = T)
+              )%>%
+              mutate(across(num_species:num_nonnative, ~ ifelse(.==0 ,NA,.))),
+            by = join_by(LEVEL3_COD==tdwg3))
 
 ```
 
-```{r,fig.height=8,fig.width=5,dpi=310}
+```{r mapping countries,fig.height=8,fig.width=5,dpi=300}
 (
   
   dat_numbers%>%
@@ -188,17 +247,15 @@ left_join(country_shapefiles,
 
 ```
 
-**Figure 1:** Number of A) total, B) native and C) non-native *Cotoneaster* species per botanical country. Botanical countries used follow the standardized level 3 classification of the World Geographic Scheme for Recording Plant Distributions (WGSRPD).
+Figure 3: Number of total (A), native (B) and non-native (C) *Cotoneaster* species per botanical country. Botanical countries used follow the standardized level 3 classification of the World Geographic Scheme for Recording Plant Distributions (WGSRPD). This is calculated after assignment to the nearest polygons in part 1.
 
 ## Part 3: Calculate native and non-native range sizes per species
 
 **Grid-based range sizes**
 
-Here I attempt to calculate range sizes using a grid based approach.
+Here I attempt to calculate range sizes using a grid based approach. Since, grid-based range size estimation is highly sensitive to sampling bias, I first need to choose the ideal resolution to use. I ended up using one degree grid cells for this purpose.
 
-Since, grid-based range size estimation is highly sensitive to sampling bias, I first need to test for the ideal resolution to use.
-
-```{r,make and visualise grid cells}
+```{r,making and visualising grid cells}
 make_grids<-
   function(){
     grids<-list()
@@ -221,9 +278,9 @@ grids[[1]]%>%
   theme_minimal()
 ```
 
-12 309 km<sup>2</sup>
+Figure 4: All occupied one degree grid cells by Cotoneaster species. The total area occupied was 12 309 km^2^.
 
-```{r}
+```{r creating range size dataframes}
 # Create dataset with number of polygons and area of polygons for each species
 
 test<-
@@ -231,14 +288,12 @@ test<-
   sf::st_as_sf()%>%
   st_join(
     dat_nn%>%
-      st_as_sf(coords = c("longitude","latitude"),crs = 4326)
-  )%>%
+      st_as_sf(coords = c("longitude","latitude"),crs = 4326))%>%
   filter(!is.na(wcvp_accepted_name))%>%
   group_by(wcvp_accepted_name,nativeness)%>%
   summarise()%>%
-  mutate(n_polys = lengths(x)
-         ,area = st_area(x)
-         )%>%
+  mutate(n_polys = lengths(x),
+         area = st_area(x))%>%
   ungroup()%>%
   st_drop_geometry()%>%
   units::drop_units()%>%
@@ -247,32 +302,29 @@ test<-
 
 range_sizes<-expand.grid(
   nativeness = c("native","nonnative"),
-  wcvp_accepted_name = unique(dat_nn$wcvp_accepted_name)
-)%>%
+  wcvp_accepted_name = unique(dat_nn$wcvp_accepted_name))%>%
   left_join(test)%>%
   filter(!is.na(wcvp_accepted_name),
          !wcvp_accepted_name %in% c("Cotoneaster parneyi","Cotoneaster × amphigenus","Cotoneaster × intermedius"))%>%
   mutate(across(n_polys:area,~ifelse(is.na(.),0,.)))
-
 ```
 
 ## Part 3b: Modelling the range sizes
 
-```{r}
+```{r fitting model of range sizes}
 aoo<-range_sizes%>%
   select(-n_polys)%>%
   pivot_wider(names_from = "nativeness",values_from = "area")%>%
   mutate(lognative = ifelse(native == 0,0,log(native)),
          lognonnative = ifelse(nonnative == 0,0,log(nonnative)))
   
-ggplot(aoo)+
-  geom_point(aes(native,nonnative))
+# ggplot(aoo)+
+#   geom_point(aes(native,nonnative))+
+# 
+# ggplot(aoo)+
+#   geom_point(aes(lognative,lognonnative))+
+#   plot_annotation(tag_levels = "A")
 
-ggplot(aoo)+
-  geom_point(aes(lognative,lognonnative))
-
-
-library(glmmTMB)
 
 fit<-glmmTMB(formula = lognonnative ~ lognative,
              data = aoo,
@@ -280,40 +332,77 @@ fit<-glmmTMB(formula = lognonnative ~ lognative,
              ziformula = ~lognative)
 
 performance::check_model(fit)
-
-marginaleffects::plot_predictions(fit,condition = "lognative",type = "response",vcov = T, points = 0.5)
-marginaleffects::plot_predictions(fit,condition = "lognative",type = "conditional",vcov = T, points = 0.5)
-marginaleffects::plot_predictions(fit,condition = "lognative",type = "zprob",vcov = T)
-
-
-fit
-
 ```
 
+```{r plotting model of range sizes}
+marginaleffects::plot_predictions(fit,condition = "lognative",
+                                  type = "response",
+                                  vcov = T, 
+                                  points = 0.5)+
+  marginaleffects::plot_predictions(fit,
+                                    condition = "lognative",
+                                    type = "conditional",
+                                    vcov = T, 
+                                    points = 0.5)/
+  (
+    
+    #marginaleffects::plot_predictions(fit,condition = "lognative",type = "zprob",vcov = T)
+    
+    predictions(fit,newdata = aoo,type = "zlink")%>%
+      mutate(across(c(estimate,conf.low,conf.high), ~1-plogis(.)),
+             is_invasive = ifelse(lognonnative>0,1,0))%>%
+      ggplot()+
+      geom_point(aes(lognative,is_invasive),alpha = 0.5)+
+      geom_line(aes(lognative,estimate))+
+      geom_ribbon(aes(x = lognative,ymin = conf.low,ymax = conf.high),alpha = 0.2)+
+      ylab("Prob. nonnative")+
+      xlab("lognative")
+  )+
+  
+  plot_annotation(tag_levels = "A")
+```
 
+Figure 5: Hurdle model comparing the log-native and log-non-native range sizes of 140 Cotoneaster species. Sub-plot A shows the full model, B shows the conditional component of the model and C shows the zero inflated component of the model. The R-squared and adjusted R-squared values for this model are `r performance::r2(fit)$R2` and `r performance::r2(fit)$R2`.
+
+Table 1: Summary table of the model showing the estimates and test statistics of the conditional and zero-inflated components of the model. Estimates for the conditional component are in the identity scale and estimates for the zero-inflated component are on the logit scale.
+
+```{r drawing table of model of range sizes}
+broom.mixed::tidy(fit)%>%
+  select(-effect)%>%
+  rename(z.stat = statistic)%>%
+  flextable()
+```
 
 ## Part 4: Explore trait data
 
-```{r}
+```{r loading trait data}
 traits<-read_delim(here("data","49000.txt"),
-           delim = "\t" )#%>%view()
+           delim = "\t" )
 ```
 
-```{r}
-traits%>%
-  group_by(AccSpeciesName)%>%
-  summarise(`Number of records` = length(TraitID))%>%
-  arrange(-`Number of records`)%>%
-  head(n = 20)%>%
+Table 2: Number of traits recorded for each species found in the TRY database.
 
-  
+```{r plotting number of traits per species}
+traits%>%
+  dplyr::select(AccSpeciesName,TraitID)%>%
+  group_by(AccSpeciesName)%>%
+  summarise(`Number of traits` = length(unique(TraitID)))%>%
+  arrange(-`Number of traits`)%>%
+  head(n = 20)%>%
   
   flextable::flextable()%>%
   flextable::autofit()
 ```
 
-```{r}
+Table 3: Number of Cotoneaster species for which each continuous trait is available in the TRY database.
+
+```{r drawing number of species per trait}
 traits%>%
+  filter(!is.na(StdValue))%>%
+  #mutate(TraitName = case_when(str_detect(TraitName,"height") ~ "height",
+  #                                      TRUE ~ TraitName))%>%
+  dplyr::select(TraitName,AccSpeciesName)%>%
+  
   group_by(TraitName)%>%
   summarise(`Number of records` = length(unique(AccSpeciesName)))%>%
   arrange(-`Number of records`)%>%
@@ -322,62 +411,123 @@ traits%>%
   flextable::autofit()
 ```
 
-```{r}
-library(MASS)
-
-fit.gamma <- fitdistr((traits%>%
-                         filter(TraitName == "Seed dry mass",
-                                StdValue<100))$StdValue, "gamma")
-
-traits%>%
-  filter(TraitName == "Seed dry mass",
-         StdValue<100)%>%
-  mutate(`Seed dry mass (mg)` = as.numeric(StdValue))%>%
-  ggplot()+
-  geom_histogram(aes(`Seed dry mass (mg)`,y = after_stat(density)),bins = 30)+
-  #scale_x_log10()+
-  theme()+
-  stat_function(
-    fun = dgamma,
-    args = list(
-      shape = fit.gamma$estimate["shape"],
-      rate  = fit.gamma$estimate["rate"]
-    ),
-    colour = "blue"
-  )+
-  stat_function(
-    fun = dnorm,
-    args = list(
-      mean = mean((traits%>%filter(TraitName == "Seed dry mass",StdValue<100))$StdValue, na.rm = TRUE),
-      sd   = sd((traits%>%filter(TraitName == "Seed dry mass",StdValue<100))$StdValue, na.rm = TRUE)
-    ),
-    colour = "green"
-  )+
-  stat_function(
-    fun = dlnorm,
-    args = list(
-      meanlog = mean(log((traits%>%filter(TraitName == "Seed dry mass",StdValue<100))$StdValue), na.rm = TRUE),
-      sdlog   = sd(log((traits%>%filter(TraitName == "Seed dry mass",StdValue<100))$StdValue), na.rm = TRUE)
-    ),
-    colour = "red"
-  )
-```
-
-```{r}
-traits%>%
-  filter(!is.na(AccSpeciesName),
-         !is.na(TraitName))%>%
-  group_by(AccSpeciesName,TraitName)%>%
-  summarise(n = length(TraitName))#%>%view()
-```
+As a result of the above tables Seed Dry Mass was chosen as the only viable trait from the TRY database.
 
 ## Part 5: Model trait data with native and non-native range sizes
+
+What is the plan of action. 1) extract the trait information (seed dry weight with its units) for as many Cotoneaster species as possible 2) match the species names with the wcvp to standardise nomenclature 3) join the resulting list to the range size data and 4) model non-native range size using this trait data.
+
+```{r creating translation table for trait data}
+library(rWCVP)
+library(rWCVPdata)
+
+translation_table_TRY<-
+  traits%>%
+  filter(TraitID == 26)%>%
+  dplyr::select(AccSpeciesName,TraitName,StdValue,OrigValueStr,OrigUnitStr)%>%
+  mutate(taxon = AccSpeciesName%>%
+           str_extract("^\\S+(?:\\s+\\S+)?"))%>%
+  filter(taxon != "Cotoneaster sp")%>%
+  group_by(taxon)%>%
+  summarise(records = length(taxon))%>%
+  rWCVP::wcvp_match_names(name_col = "taxon",
+                          fuzzy = T,
+                          progress_bar = F)%>%
+  multi_correct()%>%
+  filter(multi_correct == "keeper",
+         match_similarity > 0.9 | wcvp_name == "Cotoneaster × gracia")%>%
+  left_join(rWCVPdata::wcvp_names%>%select(plant_name_id,taxon_name),
+            by = join_by(wcvp_accepted_id == plant_name_id))
+```
+
+```{r}
+Cotoneaster_seed_weight<-
+  traits%>%
+  filter(TraitID == 26)%>%
+  dplyr::select(AccSpeciesName,TraitName,StdValue,OrigValueStr,OrigUnitStr)%>%
+  filter(StdValue<100)%>%
+  mutate(taxon = AccSpeciesName%>%
+           str_extract("^\\S+(?:\\s+\\S+)?"))%>%
+  
+  left_join(translation_table_TRY%>%
+              select(taxon,taxon_name))%>%
+  group_by(taxon_name)%>%
+  summarise(SeedWeight = mean(StdValue),
+            N = length(StdValue))
+```
+
+```{r}
+trait_by_range_size<-
+  aoo%>%
+  left_join(Cotoneaster_seed_weight,
+            by = join_by(wcvp_accepted_name == taxon_name))
+
+
+trait_by_range_size%>%  
+  ggplot()+
+  geom_point(aes(lognative,lognonnative,colour = SeedWeight),size = 3,alpha = 0.6)+
+  colorspace::scale_colour_continuous_sequential(palette = "Viridis",na.value = "grey")+
+  theme(legend.position = "left")
+```
+
+Figure 6: Seed weight values (mg) for each Cotoneaster species along with the log-native and log-non-native values. Greyed out point represents species for which trait data is missing.
+
+Because of this missing data the zero component was negligible and thus not considered in the following analyses.
+
+Table 4: Model comparison table of trait models, including a linear regression with and without interactions, and the zero-inflated model. The linear regression without interactions was the best model across AIC and BIC values.
+
+```{r}
+trait_model_data<-trait_by_range_size%>%
+               filter(!is.na(SeedWeight))
+
+trait_lm<-lm(lognonnative ~ SeedWeight + lognative,
+                  data = trait_model_data)
+
+trait_lm_int<-lm(lognonnative ~ SeedWeight * lognative,
+                  data = trait_model_data)
+
+trait_zi<-glmmTMB(formula = lognonnative ~ lognative + SeedWeight,
+                       data = trait_model_data,
+                       family = gaussian(),
+                       ziformula = ~lognative)
+
+performance::compare_performance(trait_lm,trait_lm_int,trait_zi)%>%
+  flextable()
+```
+
+```{r}
+marginaleffects::plot_predictions(trait_lm,condition = c("lognative"),
+                                  points = 0.5,vcov = T,
+                                  type = "response")+
+
+marginaleffects::plot_predictions(trait_lm,
+                                  condition = c("SeedWeight"),
+                                  points = 0.5,vcov = T,
+                                  type = "response")/
+
+marginaleffects::plot_predictions(trait_lm,
+                                  condition = c("lognative","SeedWeight"),
+                                  points = 0.5,vcov = F,
+                                  type = "response")+
+  plot_layout(axes = "collect",
+              guides = "collect")&
+  plot_annotation(tag_levels = "A")
+```
+
+Figure 7: Visualisation of best trait model. A simple linear regression with the log-native range size and seed weight as predictors and the log-non-native range size as the response.
+
+```{r}
+trait_lm%>%broom::tidy()%>%
+  flextable()
+```
 
 ## Supplementary plots
 
 **Plotting each species**
 
-```{r}
+Note: this is omitted for the sake of space.
+
+```{r eval=FALSE, include=FALSE}
 species_list<-dat_nn%>%
   group_by(wcvp_species)%>%
   summarise(n = length(wcvp_species))%>%
@@ -405,6 +555,8 @@ for(i in 1:length(species_list$wcvp_species)){
 }
 ```
 
-```{r echo=FALSE, paged.print=TRUE}
+```{r eval=FALSE, dpi=100, include=FALSE, paged.print=TRUE}
 results
 ```
+
+## References
