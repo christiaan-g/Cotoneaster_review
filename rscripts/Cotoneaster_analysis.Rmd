@@ -376,7 +376,7 @@ broom.mixed::tidy(fit)%>%
 ## Part 4: Explore trait data
 
 ```{r loading trait data}
-traits<-read_delim(here("data","49000.txt"),
+traits<-read_delim(here("data","Trait data","49000.txt"),
            delim = "\t" )
 ```
 
