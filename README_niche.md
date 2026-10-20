@@ -2,7 +2,7 @@
 
 Code accompanying:
 
-> Potgieter LJ & Gildenhuys C. A global review of *Cotoneaster* (Rosaceae) invasions: distribution, drivers, and projected spread. *Biological Invasions* (submitted 2026).
+> Potgieter LJ, Gildenhuys C, Gaertner M, Richardson DM. Global invasion patterns and niche dynamics in the shrub genus Cotoneaster (Rosaceae). *Biological Invasions* (submitted 2026).
 
 ---
 
