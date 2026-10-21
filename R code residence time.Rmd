@@ -235,10 +235,3 @@ cat("\nWrote figure3_residence_time.png/.pdf and residence_time_data.csv\n")
 
 ```
 
-
-
-
-
-
-
-
