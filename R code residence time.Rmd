@@ -1,0 +1,244 @@
+---
+title: "R code residence time"
+author: "Luke J. Potgieter & Christiaan P. Gildenhuys"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Residence time and non-native range size in Cotoneaster
+R translation of the Seebens-based residence-time analysis
+
+
+# Inputs
+
+1. Seebens et al. (2017) first-records database v4.0
+ FirstRecords_dataset_public_v4.0.csv  (semicolon-delimited, Latin-1)
+ 
+ 
+2. The cleaned GBIF records produced by the main pipeline
+ "Final gbif_records_090426.csv"  (or gbif_final_species.rds)
+
+Produces: the summary statistics reported in the Results (Spearman, log-linear regression, partial correlation controlling for recording effort, combined model, residence-time residuals) and Fig. 3 (range vs residence time).
+
+
+```{r load packages}
+suppressPackageStartupMessages({
+  library(readr)
+  library(dplyr)
+  library(stringr)
+  library(tidyr)
+  library(ggplot2)
+  library(ggrepel)
+})
+```
+
+
+# Config
+
+```{r}
+seebens_path <- "FirstRecords_dataset_public_v4.0.csv"
+gbif_csv     <- "Final gbif_records_090426.csv"   # or set gbif_rds instead
+gbif_rds     <- NA                                 # e.g. "gbif_final_species.rds"
+year_now     <- 2026     # reference year for minimum residence time
+year_floor   <- 1500     # exclude pre-Linnaean placeholder dates (1492, 1500)
+min_records  <- 20       # minimum non-native occurrence records to retain a species
+out_dir      <- "."
+```
+
+
+Standardise any taxon string to a clean binomial; drop hybrids, Pyracantha and genus-only / infraspecific-only names.
+
+```{r}
+to_binomial <- function(x) {
+  x <- str_replace_all(x, "Ã—", "×")   # repair latin-1 mojibake of the hybrid sign
+  x <- str_trim(x)
+  hybrid <- str_detect(x, "×")          # any hybrid formula
+  pyr    <- str_detect(x, "^Pyracantha")
+  parts  <- str_split(x, "\\s+")
+  bino   <- vapply(parts, function(p) if (length(p) >= 2) paste(p[1], p[2]) else NA_character_, "")
+  bino[hybrid | pyr | !str_detect(x, "^Cotoneaster")] <- NA_character_
+  bino
+}
+```
+
+#  1. Seebens first records 
+
+```{r}
+see <- read_delim(seebens_path, delim = ";", locale = locale(encoding = "latin1"),
+                  show_col_types = FALSE, guess_max = 1e5)
+
+first_records <- see %>%
+  filter(str_detect(taxon, "^Cotoneaster")) %>%
+  mutate(species   = to_binomial(taxon),
+         first_year = suppressWarnings(as.numeric(firstRecordEvent))) %>%
+  filter(!is.na(species), !is.na(first_year), first_year > year_floor) %>%
+  group_by(species) %>%
+  summarise(first_year = min(first_year), .groups = "drop") %>%
+  mutate(mrt = year_now - first_year)
+```
+
+#  2. GBIF non-native range 
+
+```{r}
+gbif <- if (!is.na(gbif_rds)) readRDS(gbif_rds) else
+          read_csv(gbif_csv, show_col_types = FALSE, guess_max = 1e6)
+
+gbif_nn <- gbif %>%
+  mutate(species = to_binomial(wcvp_accepted_name),
+         # effective nativeness: use the assigned nativeness, falling back to the
+         # nearest-neighbour infill (nn_nativeness) only where nativeness is NA
+         eff = ifelse(is.na(nativeness) | nativeness %in% c("NA", ""),
+                      nn_nativeness, nativeness)) %>%
+  filter(!is.na(species),
+         eff == "nonnative",
+         !is.na(tdwg3), !tdwg3 %in% c("NA", "")) %>%
+  group_by(species) %>%
+  summarise(n_regions = n_distinct(tdwg3),
+            n_records = n(), .groups = "drop")
+```
+
+
+# 3. Join and filter 
+
+```{r}
+dat <- gbif_nn %>%
+  inner_join(first_records, by = "species") %>%
+  filter(n_records >= min_records) %>%
+  mutate(log_range = log10(n_regions),
+         log_recs  = log10(n_records)) %>%
+  arrange(species)
+
+cat("Species retained (>= ", min_records, " non-native records and a Seebens ",
+    "first record > ", year_floor, "): n = ", nrow(dat), "\n\n", sep = "")
+```
+
+
+# 4. Statistics
+
+(a) Spearman rank correlation, range vs residence time
+
+```{r}
+sp_cor <- cor.test(dat$mrt, dat$n_regions, method = "spearman", exact = FALSE)
+
+cat(sprintf("Spearman: rho = %.3f, p = %.4f\n", sp_cor$estimate, sp_cor$p.value))
+```
+
+(b) log-linear regression: log10(range) ~ residence time
+
+```{r}
+m_rt <- lm(log_range ~ mrt, data = dat)
+
+cat(sprintf("Log-linear regression: R2 = %.3f, p = %.4f, slope = %.5f\n",
+            summary(m_rt)$r.squared,
+            summary(m_rt)$coefficients["mrt", "Pr(>|t|)"],
+            coef(m_rt)["mrt"]))
+```
+
+(c) partial correlation of range vs residence time controlling for log record count (computed from residuals; identical to ppcor::pcor.test if that is installed)
+
+```{r}
+partial_r <- function(y, x, z) {
+  ry <- residuals(lm(y ~ z)); rx <- residuals(lm(x ~ z))
+  ct <- cor.test(ry, rx); c(r = unname(ct$estimate), p = ct$p.value)
+}
+pr <- partial_r(dat$log_range, dat$mrt, dat$log_recs)
+cat(sprintf("Partial correlation (range vs MRT | log records): r = %.3f, p = %.4f\n",
+            pr["r"], pr["p"]))
+
+```
+
+
+(d) combined model: log10(range) ~ log record count + residence time
+
+```{r}
+m_comb <- lm(log_range ~ log_recs + mrt, data = dat)
+cat(sprintf("Combined model: R2 = %.3f  (beta log-recs = %.3f, beta MRT = %.4f)\n",
+            summary(m_comb)$r.squared, coef(m_comb)["log_recs"], coef(m_comb)["mrt"]))
+
+```
+
+(e) residence-time regression residuals (over/under-spread relative to age)
+
+```{r}
+dat <- dat %>% mutate(resid_rt = residuals(m_rt))
+cat("\nStrongest positive residuals (spread more than age predicts):\n")
+print(dat %>% arrange(desc(resid_rt)) %>% transmute(species, first_year, n_regions,
+                                                    resid = round(resid_rt, 3)) %>% head(5))
+cat("\nStrongest negative residuals (spread less than age predicts):\n")
+print(dat %>% arrange(resid_rt) %>% transmute(species, first_year, n_regions,
+                                              resid = round(resid_rt, 3)) %>% head(5))
+```
+
+
+# 5. Occurrence-date control 
+
+Re-estimate residence time from the earliest GBIF occurrence year instead of
+curated first records, to show the relationship collapses (the manuscript's
+"partial r = 0.06" sentence).
+
+
+```{r}
+gbif_firstobs <- gbif %>%
+  mutate(species = to_binomial(wcvp_accepted_name),
+         yr = suppressWarnings(as.numeric(year))) %>%
+  filter(!is.na(species), !is.na(yr), yr > year_floor) %>%
+  group_by(species) %>% summarise(first_obs = min(yr), .groups = "drop")
+
+dat_obs <- gbif_nn %>%
+  inner_join(gbif_firstobs, by = "species") %>%
+  filter(n_records >= min_records) %>%
+  mutate(mrt_obs = year_now - first_obs,
+         log_range = log10(n_regions), log_recs = log10(n_records))
+pr_obs <- partial_r(dat_obs$log_range, dat_obs$mrt_obs, dat_obs$log_recs)
+cat(sprintf("\nControl (MRT from earliest GBIF record): partial r = %.3f, p = %.4f  (n = %d)\n",
+            pr_obs["r"], pr_obs["p"], nrow(dat_obs)))
+
+
+```
+
+
+
+```{r}
+lab <- c("divaricatus", "horizontalis", "franchetii", "coriaceus", "acutifolius",
+         "niger", "rotundifolius", "tomentosus", "pannosus", "simonsii")
+dat <- dat %>% mutate(epithet = word(species, 2),
+                      show = epithet %in% lab)
+
+p <- ggplot(dat, aes(mrt, n_regions)) +
+  geom_smooth(method = "lm", se = TRUE, colour = "grey30",
+              fill = "grey85", linewidth = 0.6) +
+  geom_point(size = 2.4, colour = "#2c7fb8", alpha = 0.9) +
+  geom_text_repel(data = filter(dat, show),
+                  aes(label = paste0("C. ", epithet)),
+                  fontface = "italic", size = 3, min.segment.length = 0,
+                  box.padding = 0.5, max.overlaps = Inf, seed = 1) +
+  scale_y_log10() +
+  labs(x = "Minimum residence time (years)",
+       y = "Non-native range size (WGSRPD level-3 units)") +
+  theme_classic(base_size = 12)
+
+
+ggsave(file.path(out_dir, "figure3_residence_time.png"), p,
+       width = 7, height = 5, dpi = 300)
+
+ggsave(file.path(out_dir, "figure3_residence_time.pdf"), p, width = 7, height = 5)
+
+write_csv(dat %>% select(species, first_year, mrt, n_regions, n_records,
+                         log_range, log_recs, resid_rt),
+          file.path(out_dir, "residence_time_data.csv"))
+
+cat("\nWrote figure3_residence_time.png/.pdf and residence_time_data.csv\n")
+
+```
+
+
+
+
+
+
+
+
