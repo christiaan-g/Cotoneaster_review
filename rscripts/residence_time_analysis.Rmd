@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Residence time and non-native range size in Cotoneaster R translation of the Seebens-based residence-time analysis
 
-# Inputs
+## Inputs
 
 1.  Seebens et al. (2017) first-records database v4.0 FirstRecords_dataset_public_v4.0.csv (semicolon-delimited, Latin-1)
 
@@ -30,7 +30,7 @@ suppressPackageStartupMessages({
 })
 ```
 
-# Config
+## Config
 
 ```{r}
 seebens_path <- "FirstRecords_dataset_public_v4.0.csv"
@@ -57,7 +57,7 @@ to_binomial <- function(x) {
 }
 ```
 
-# 1. Seebens first records
+## 1. Seebens first records
 
 ```{r}
 see <- read_delim(seebens_path, delim = ";", locale = locale(encoding = "latin1"),
@@ -73,7 +73,7 @@ first_records <- see %>%
   mutate(mrt = year_now - first_year)
 ```
 
-# 2. GBIF non-native range
+## 2. GBIF non-native range
 
 ```{r}
 gbif <- if (!is.na(gbif_rds)) readRDS(gbif_rds) else
@@ -93,7 +93,7 @@ gbif_nn <- gbif %>%
             n_records = n(), .groups = "drop")
 ```
 
-# 3. Join and filter
+## 3. Join and filter
 
 ```{r}
 dat <- gbif_nn %>%
@@ -107,7 +107,7 @@ cat("Species retained (>= ", min_records, " non-native records and a Seebens ",
     "first record > ", year_floor, "): n = ", nrow(dat), "\n\n", sep = "")
 ```
 
-# 4. Statistics
+## 4. Statistics
 
 (a) Spearman rank correlation, range vs residence time
 
@@ -162,7 +162,7 @@ print(dat %>% arrange(resid_rt) %>% transmute(species, first_year, n_regions,
                                               resid = round(resid_rt, 3)) %>% head(5))
 ```
 
-# 5. Occurrence-date control
+## 5. Occurrence-date control
 
 Re-estimate residence time from the earliest GBIF occurrence year instead of curated first records, to show the relationship collapses (the manuscript's "partial r = 0.06" sentence).
 
