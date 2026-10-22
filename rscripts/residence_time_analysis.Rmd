@@ -9,21 +9,15 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Residence time and non-native range size in Cotoneaster
-R translation of the Seebens-based residence-time analysis
-
+Residence time and non-native range size in Cotoneaster R translation of the Seebens-based residence-time analysis
 
 # Inputs
 
-1. Seebens et al. (2017) first-records database v4.0
- FirstRecords_dataset_public_v4.0.csv  (semicolon-delimited, Latin-1)
- 
- 
-2. The cleaned GBIF records produced by the main pipeline
- "Final gbif_records_090426.csv"  (or gbif_final_species.rds)
+1.  Seebens et al. (2017) first-records database v4.0 FirstRecords_dataset_public_v4.0.csv (semicolon-delimited, Latin-1)
+
+2.  The cleaned GBIF records produced by the main pipeline "Final gbif_records_090426.csv" (or gbif_final_species.rds)
 
 Produces: the summary statistics reported in the Results (Spearman, log-linear regression, partial correlation controlling for recording effort, combined model, residence-time residuals) and Fig. 3 (range vs residence time).
-
 
 ```{r load packages}
 suppressPackageStartupMessages({
@@ -36,7 +30,6 @@ suppressPackageStartupMessages({
 })
 ```
 
-
 # Config
 
 ```{r}
@@ -48,7 +41,6 @@ year_floor   <- 1500     # exclude pre-Linnaean placeholder dates (1492, 1500)
 min_records  <- 20       # minimum non-native occurrence records to retain a species
 out_dir      <- "."
 ```
-
 
 Standardise any taxon string to a clean binomial; drop hybrids, Pyracantha and genus-only / infraspecific-only names.
 
@@ -65,7 +57,7 @@ to_binomial <- function(x) {
 }
 ```
 
-#  1. Seebens first records 
+# 1. Seebens first records
 
 ```{r}
 see <- read_delim(seebens_path, delim = ";", locale = locale(encoding = "latin1"),
@@ -81,7 +73,7 @@ first_records <- see %>%
   mutate(mrt = year_now - first_year)
 ```
 
-#  2. GBIF non-native range 
+# 2. GBIF non-native range
 
 ```{r}
 gbif <- if (!is.na(gbif_rds)) readRDS(gbif_rds) else
@@ -101,8 +93,7 @@ gbif_nn <- gbif %>%
             n_records = n(), .groups = "drop")
 ```
 
-
-# 3. Join and filter 
+# 3. Join and filter
 
 ```{r}
 dat <- gbif_nn %>%
@@ -116,7 +107,6 @@ cat("Species retained (>= ", min_records, " non-native records and a Seebens ",
     "first record > ", year_floor, "): n = ", nrow(dat), "\n\n", sep = "")
 ```
 
-
 # 4. Statistics
 
 (a) Spearman rank correlation, range vs residence time
@@ -127,7 +117,7 @@ sp_cor <- cor.test(dat$mrt, dat$n_regions, method = "spearman", exact = FALSE)
 cat(sprintf("Spearman: rho = %.3f, p = %.4f\n", sp_cor$estimate, sp_cor$p.value))
 ```
 
-(b) log-linear regression: log10(range) ~ residence time
+(b) log-linear regression: log10(range) \~ residence time
 
 ```{r}
 m_rt <- lm(log_range ~ mrt, data = dat)
@@ -151,8 +141,7 @@ cat(sprintf("Partial correlation (range vs MRT | log records): r = %.3f, p = %.4
 
 ```
 
-
-(d) combined model: log10(range) ~ log record count + residence time
+(d) combined model: log10(range) \~ log record count + residence time
 
 ```{r}
 m_comb <- lm(log_range ~ log_recs + mrt, data = dat)
@@ -173,13 +162,9 @@ print(dat %>% arrange(resid_rt) %>% transmute(species, first_year, n_regions,
                                               resid = round(resid_rt, 3)) %>% head(5))
 ```
 
+# 5. Occurrence-date control
 
-# 5. Occurrence-date control 
-
-Re-estimate residence time from the earliest GBIF occurrence year instead of
-curated first records, to show the relationship collapses (the manuscript's
-"partial r = 0.06" sentence).
-
+Re-estimate residence time from the earliest GBIF occurrence year instead of curated first records, to show the relationship collapses (the manuscript's "partial r = 0.06" sentence).
 
 ```{r}
 gbif_firstobs <- gbif %>%
@@ -199,8 +184,6 @@ cat(sprintf("\nControl (MRT from earliest GBIF record): partial r = %.3f, p = %.
 
 
 ```
-
-
 
 ```{r}
 lab <- c("divaricatus", "horizontalis", "franchetii", "coriaceus", "acutifolius",
@@ -234,4 +217,3 @@ write_csv(dat %>% select(species, first_year, mrt, n_regions, n_records,
 cat("\nWrote figure3_residence_time.png/.pdf and residence_time_data.csv\n")
 
 ```
-

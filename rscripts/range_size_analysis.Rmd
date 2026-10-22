@@ -20,7 +20,7 @@ This document reports some analyses conducted for the "Cotoneaster review" paper
 
 ## Methods
 
-*Cotoneaster* records were downloaded from the Global Biodiversity Information Facility (GBIF) on 15 May 2026 (https://doi.org/10.15468/dl.gscv7g). Data were loaded into and all subsequent analyses were conducted in R version 4.6.0.
+*Cotoneaster* records were downloaded from the Global Biodiversity Information Facility (GBIF) on 15 May 2026 (<https://doi.org/10.15468/dl.gscv7g>). Data were loaded into and all subsequent analyses were conducted in R version 4.6.0.
 
 Known non-native ranges were obtained from the Global Naturalised Alien Flora (GloNAF) database version 3 available at <doi:10.5281/zenodo.17105725> [@davis]. Known native ranges were obtained from the World Checklist of Vascular Plants (WCVP) [@wcvp:wo2024] via the \`rWCVPdata\` package [@brown2023].
 
@@ -166,7 +166,6 @@ dat_geo<-
 
 world <- rnaturalearth::ne_countries(returnclass = "sf",scale = "small")
 ```
-
 
 ```{r plotting records}
 ggplot(dat_geo)+
