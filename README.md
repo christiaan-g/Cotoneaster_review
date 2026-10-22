@@ -1,5 +1,3 @@
-# Cotoneaster niche comparison and model transferability
-
 Code accompanying:
 
 > Potgieter LJ, Gildenhuys C, Gaertner M, Richardson DM. Global invasion patterns and niche dynamics in the shrub genus Cotoneaster (Rosaceae). *Biological Invasions* (submitted 2026).
@@ -91,7 +89,7 @@ If you use this code, please cite the manuscript (details to be added on accepta
 
 See `LICENSE`. Code is released under the MIT Licence unless stated otherwise; the input datasets remain under the licences of their original providers.
 
-# Niche_models
+# Cotoneaster niche comparison and model transferability
 
 ## Overview
 
